@@ -8,7 +8,8 @@ from tests.test_etl_and_engine import (
     test_pool_takt_reference_math,
     test_headcount_sanity_real_greater_than_85meta,
     test_unmeasured_operations_scope_honesty,
-    test_sanity_check_suite_v10_all_passed
+    test_sanity_check_suite_v10_all_passed,
+    test_shift_performance_and_hourly_timeline
 )
 
 print("Running test_db_master_populated...")
@@ -35,4 +36,8 @@ print("Running test_sanity_check_suite_v10_all_passed...")
 test_sanity_check_suite_v10_all_passed()
 print("PASSED!")
 
-print("All ADDENDUM v10 tests passed 100% successfully!")
+print("Running test_shift_performance_and_hourly_timeline...")
+test_shift_performance_and_hourly_timeline()
+print("PASSED!")
+
+print("All ADDENDUM v10 & Shift Performance tests passed 100% successfully!")

@@ -110,3 +110,27 @@ def test_sanity_check_suite_v10_all_passed():
     assert len(df_sanity) >= 6
     for _, row in df_sanity.iterrows():
         assert "PASSED" in row['Status'], f"Sanity test failed: {row['Test Case']}"
+
+def test_shift_performance_and_hourly_timeline():
+    from src.engine.capacity_engine import get_shift_performance_summary, get_shift_loss_pareto, get_hourly_24h_timeline
+    
+    df_shift = get_shift_performance_summary()
+    assert not df_shift.empty
+    assert len(df_shift) == 2
+    shifts = df_shift['shift_code'].tolist()
+    assert "Day" in shifts
+    assert "Night" in shifts
+    
+    # Check that day and night both have total_man_hours > 0
+    assert (df_shift['total_man_hours'] > 0).all()
+    assert (df_shift['pct_va'] > 0).all()
+    
+    # Check shift pareto loss
+    df_p_day = get_shift_loss_pareto(turno="Day")
+    assert not df_p_day.empty
+    assert 'loss_reason' in df_p_day.columns
+    
+    # Check 24-hour timeline
+    df_time = get_hourly_24h_timeline()
+    assert len(df_time) == 24
+    assert df_time['total_hours'].sum() > 0

@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS dim_calendario (
     dias_uteis INTEGER NOT NULL DEFAULT 20
 );
 
+DROP TABLE IF EXISTS fato_medicion;
 CREATE TABLE IF NOT EXISTS fato_medicion (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     id_registro TEXT,
@@ -62,6 +63,10 @@ CREATE TABLE IF NOT EXISTS fato_medicion (
     nombre_operacion TEXT,
     nombre_estacion TEXT,
     fecha_medicion TEXT,
+    hora_inicio TEXT,
+    hora_fin TEXT,
+    turno TEXT, -- 'Day' (07:00-19:00) / 'Night' (19:00-07:00)
+    hora_decimal REAL,
     duracion_minutos_real REAL,
     duracion_horas_real REAL,
     cantidad_operadores INTEGER,

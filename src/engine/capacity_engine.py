@@ -938,3 +938,141 @@ def get_total_monthly_workload_capacity_summary(mercado="Consolidado", ano=2027,
 get_pareto_nva = get_pareto_nva_corrected
 get_pareto_nva_v4 = get_pareto_nva_corrected
 get_kpi_metadata = get_kpi_metadata_v4
+
+# -------------------------------------------------------------
+# 11. SHIFT & PRODUCTIVITY COMPARISON (DAY VS NIGHT - 12H)
+# -------------------------------------------------------------
+def get_shift_performance_summary(estacion=None, modelo=None):
+    """
+    Summarizes Total Man-Hours, VA, NNVA, NVA, and Efficiency % by Shift (Day vs Night).
+    """
+    sql = """
+        SELECT 
+            CASE 
+                WHEN turno = 'Night' THEN 'Night Shift (19:00 - 07:00)'
+                ELSE 'Day Shift (07:00 - 19:00)'
+            END as shift_name,
+            turno as shift_code,
+            COUNT(id_registro) as total_records,
+            SUM(horas_hombre) as total_man_hours,
+            SUM(CASE WHEN codigo_clasificacion = 'VA' THEN horas_hombre ELSE 0 END) as va_hours,
+            SUM(CASE WHEN codigo_clasificacion = 'NNVA' THEN horas_hombre ELSE 0 END) as nnva_hours,
+            SUM(CASE WHEN codigo_clasificacion = 'NVA' OR tipo_tiempo LIKE '%Muerto%' THEN horas_hombre ELSE 0 END) as nva_hours
+        FROM fato_medicion
+        WHERE motivo_detalle NOT LIKE '%Descanso Legítimo%'
+    """
+    params = []
+    if estacion and estacion != "All":
+        sql += " AND nombre_estacion = ?"
+        params.append(estacion)
+    if modelo and modelo != "All":
+        sql += " AND modelo_disyuntor = ?"
+        params.append(modelo)
+        
+    sql += " GROUP BY turno ORDER BY shift_code ASC"
+    df = run_query(sql, params=tuple(params))
+    
+    if df.empty:
+        return pd.DataFrame()
+        
+    df['pct_va'] = (df['va_hours'] / df['total_man_hours'] * 100.0).round(1)
+    df['pct_nnva'] = (df['nnva_hours'] / df['total_man_hours'] * 100.0).round(1)
+    df['pct_nva'] = (df['nva_hours'] / df['total_man_hours'] * 100.0).round(1)
+    df['total_man_hours'] = df['total_man_hours'].round(2)
+    df['va_hours'] = df['va_hours'].round(2)
+    df['nnva_hours'] = df['nnva_hours'].round(2)
+    df['nva_hours'] = df['nva_hours'].round(2)
+    return df
+
+def get_shift_loss_pareto(turno="Day", estacion=None, modelo=None):
+    """
+    Returns top loss reasons (NVA) specifically for Day or Night shift.
+    """
+    sql = """
+        SELECT 
+            CASE 
+                WHEN motivo_detalle LIKE '%Ausencia%' THEN 'Unplanned Operator Absence'
+                WHEN motivo_detalle LIKE '%Plática%' OR motivo_detalle LIKE '%Platica%' THEN 'Interpersonal Distraction'
+                WHEN motivo_detalle LIKE '%Tiempo Muerto No Especificado%' THEN 'Unspecified Idle Time'
+                WHEN motivo_detalle LIKE '%Otros Tiempos Muertos%' THEN 'Other Idle Time'
+                WHEN motivo_detalle LIKE '%Movimiento de Carrito%' OR motivo_detalle LIKE '%Movimiento%' THEN 'Trolley & Kit Movement'
+                WHEN motivo_detalle LIKE '%Búsqueda%' OR motivo_detalle LIKE '%Busqueda%' OR motivo_detalle LIKE '%Material%' OR motivo_detalle LIKE '%retrival%' THEN 'Material & Parts Search'
+                WHEN motivo_detalle LIKE '%Espera%' THEN 'Waiting for Material'
+                WHEN motivo_detalle LIKE '%Consulta%' OR motivo_detalle LIKE '%DWG%' THEN 'Drawing Consultation'
+                WHEN motivo_detalle LIKE '%Llenado%' OR motivo_detalle LIKE '%Registro%' THEN 'Board Filling & Logging'
+                WHEN motivo_detalle LIKE '%Uso de Celular%' THEN 'Personal Interruption'
+                WHEN motivo_detalle LIKE '%Limpieza%' THEN '5S Cleaning & Order'
+                WHEN motivo_detalle LIKE '%Alistamiento%' OR motivo_detalle LIKE '%Herramientas%' THEN 'Tooling Setup'
+                WHEN motivo_detalle LIKE '%Ajuste%' OR motivo_detalle LIKE '%Adjust%' THEN 'Wiring Adjustments'
+                WHEN motivo_detalle LIKE '%Inactividad%' OR motivo_detalle LIKE '%Cambio de Turno%' THEN 'Shift Changeover Idle'
+                WHEN motivo_detalle LIKE '%Apoyo%' THEN 'Cross-Station Support'
+                WHEN motivo_detalle LIKE '%Instrucción%' OR motivo_detalle LIKE '%Capacitación%' THEN 'Operator Training'
+                ELSE motivo_detalle
+            END as loss_reason,
+            COUNT(id_registro) as occurrences,
+            SUM(horas_hombre) as loss_hours
+        FROM fato_medicion
+        WHERE (codigo_clasificacion = 'NVA' OR tipo_tiempo LIKE '%Muerto%')
+          AND motivo_detalle NOT LIKE '%Descanso Legítimo%'
+          AND turno = ?
+    """
+    params = [turno]
+    if estacion and estacion != "All":
+        sql += " AND nombre_estacion = ?"
+        params.append(estacion)
+    if modelo and modelo != "All":
+        sql += " AND modelo_disyuntor = ?"
+        params.append(modelo)
+
+    sql += " GROUP BY loss_reason ORDER BY loss_hours DESC"
+    df = run_query(sql, params=tuple(params))
+    if not df.empty:
+        total_h = df['loss_hours'].sum()
+        df['loss_hours'] = df['loss_hours'].round(2)
+        df['pct_share'] = (df['loss_hours'] / total_h * 100.0).round(1) if total_h > 0 else 0.0
+    return df
+
+def get_hourly_24h_timeline(estacion=None, modelo=None):
+    """
+    Returns 24-hour breakdown (00h to 23h) of VA, NNVA, and NVA man-hours.
+    """
+    sql = """
+        SELECT 
+            CAST(SUBSTR(hora_inicio, 1, 2) AS INTEGER) as hour_of_day,
+            codigo_clasificacion as clasif,
+            SUM(horas_hombre) as man_hours
+        FROM fato_medicion
+        WHERE hora_inicio IS NOT NULL AND hora_inicio != ''
+          AND motivo_detalle NOT LIKE '%Descanso Legítimo%'
+    """
+    params = []
+    if estacion and estacion != "All":
+        sql += " AND nombre_estacion = ?"
+        params.append(estacion)
+    if modelo and modelo != "All":
+        sql += " AND modelo_disyuntor = ?"
+        params.append(modelo)
+
+    sql += " GROUP BY hour_of_day, clasif ORDER BY hour_of_day ASC"
+    df_raw = run_query(sql, params=tuple(params))
+    
+    rows = []
+    for h in range(24):
+        h_df = df_raw[df_raw['hour_of_day'] == h]
+        va = h_df[h_df['clasif'] == 'VA']['man_hours'].sum() if not h_df.empty else 0.0
+        nnva = h_df[h_df['clasif'] == 'NNVA']['man_hours'].sum() if not h_df.empty else 0.0
+        nva = h_df[h_df['clasif'] == 'NVA']['man_hours'].sum() if not h_df.empty else 0.0
+        
+        shift_label = 'Day Shift (07:00-19:00)' if 7 <= h < 19 else 'Night Shift (19:00-07:00)'
+        hour_str = f"{h:02d}:00"
+        
+        rows.append({
+            "hour_of_day": h,
+            "hour_label": hour_str,
+            "shift": shift_label,
+            "va_hours": round(float(va or 0.0), 2),
+            "nnva_hours": round(float(nnva or 0.0), 2),
+            "nva_hours": round(float(nva or 0.0), 2),
+            "total_hours": round(float((va or 0.0) + (nnva or 0.0) + (nva or 0.0)), 2)
+        })
+    return pd.DataFrame(rows)

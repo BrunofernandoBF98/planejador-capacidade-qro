@@ -32,7 +32,10 @@ from src.engine.capacity_engine import (
     get_pareto_nnva_corrected,
     get_data_coverage_matrix,
     get_ai_rebalancing_suggestions,
-    run_sanity_check_suite
+    run_sanity_check_suite,
+    get_shift_performance_summary,
+    get_shift_loss_pareto,
+    get_hourly_24h_timeline
 )
 from src.cpm.cpm_engine import (
     build_process_dag,
@@ -105,8 +108,9 @@ menu = st.sidebar.radio(
         "6. ⚖️ System Data Quality (SAP Internal Diagnostic)",
         "7. 🛑 Waste & NVA Pareto Analysis",
         "8. 🛠️ Necessary Non-Value-Added (NNVA) Process Analysis",
-        "9. 📊 Data Coverage & Scope Transparency (46 HC Pool Overview)",
-        "10. 🔍 Data Audit & Sanity Suite"
+        "9. 📊 Shift & Productivity Analysis (Day vs Night)",
+        "10. 📊 Data Coverage & Scope Transparency (46 HC Pool Overview)",
+        "11. 🔍 Data Audit & Sanity Suite"
     ]
 )
 
@@ -705,10 +709,109 @@ elif menu == "8. 🛠️ Necessary Non-Value-Added (NNVA) Process Analysis":
         st.table(pd.DataFrame(levers_data))
 
 # -------------------------------------------------------------
-# SCREEN 9: Data Coverage & Scope Transparency (46 HC Pool Overview)
+# SCREEN 9: Shift & Productivity Analysis (Day vs Night - 12h)
 # -------------------------------------------------------------
-elif menu == "9. 📊 Data Coverage & Scope Transparency (46 HC Pool Overview)":
-    st.markdown('<div class="main-title">9. DATA COVERAGE & ELECTRICAL WORKFORCE OVERVIEW (46 HC POOL)</div>', unsafe_allow_html=True)
+elif menu.startswith("9. 📊 Shift & Productivity Analysis"):
+    st.markdown('<div class="main-title">9. SHIFT & PRODUCTIVITY ANALYSIS (DAY VS NIGHT - 12H SHIFTS)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="concept-box">💡 <b>Factory Operational Shift Breakdown</b>:<br/>'
+                'Direct side-by-side comparative analysis of productivity (<b>Value-Added %</b>), process support (<b>NNVA %</b>), and waste losses (<b>NVA %</b>) between <b>Day Shift (07:00 – 19:00)</b> and <b>Night Shift (19:00 – 07:00)</b>.</div>', unsafe_allow_html=True)
+
+    # Filters
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
+        stations_list = ["All", "Control Frame Station", "Wire Cutting Station", "Harness Enablement Station", "Cabinet Enablement Station", "Door Enablement Station", "Continuity Test Station"]
+        sel_station = st.selectbox("Filter by Workstation:", stations_list, key="shift_station_filter")
+    with col_f2:
+        models_list = ["All", "FG-145", "DT-362", "DT-145", "FI-420", "FI-245", "FI-145", "FG-150"]
+        sel_model = st.selectbox("Filter by Breaker Model:", models_list, key="shift_model_filter")
+
+    df_shift = get_shift_performance_summary(estacion=sel_station, modelo=sel_model)
+    
+    if not df_shift.empty:
+        col_day, col_night = st.columns(2)
+        
+        day_row = df_shift[df_shift['shift_code'] == 'Day']
+        night_row = df_shift[df_shift['shift_code'] == 'Night']
+        
+        with col_day:
+            st.markdown("### ☀️ Day Shift (07:00 – 19:00)")
+            if not day_row.empty:
+                r_day = day_row.iloc[0]
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Total Man-Hours", f"{r_day['total_man_hours']}h")
+                c2.metric("Productivity (% VA)", f"{r_day['pct_va']}%")
+                c3.metric("Support (% NNVA)", f"{r_day['pct_nnva']}%")
+                c4.metric("Loss Rate (% NVA)", f"{r_day['pct_nva']}%")
+            else:
+                st.info("No data recorded for Day Shift with selected filters.")
+                
+        with col_night:
+            st.markdown("### 🌙 Night Shift (19:00 – 07:00)")
+            if not night_row.empty:
+                r_night = night_row.iloc[0]
+                cn1, cn2, cn3, cn4 = st.columns(4)
+                cn1.metric("Total Man-Hours", f"{r_night['total_man_hours']}h")
+                cn2.metric("Productivity (% VA)", f"{r_night['pct_va']}%")
+                cn3.metric("Support (% NNVA)", f"{r_night['pct_nnva']}%")
+                cn4.metric("Loss Rate (% NVA)", f"{r_night['pct_nva']}%")
+            else:
+                st.info("No data recorded for Night Shift with selected filters.")
+
+        st.markdown("---")
+        
+        # Plot 1: Stacked Bar Chart comparing VA, NNVA, NVA by Shift
+        st.subheader("📈 Time Composition Comparison by Shift (Man-Hours)")
+        fig_comp = go.Figure()
+        fig_comp.add_trace(go.Bar(name='Value-Added (VA)', x=df_shift['shift_name'], y=df_shift['va_hours'], marker_color='#2CA02C', text=df_shift['va_hours'], textposition='auto'))
+        fig_comp.add_trace(go.Bar(name='Necessary Non-VA (NNVA)', x=df_shift['shift_name'], y=df_shift['nnva_hours'], marker_color='#FF7F0E', text=df_shift['nnva_hours'], textposition='auto'))
+        fig_comp.add_trace(go.Bar(name='Waste Loss (NVA)', x=df_shift['shift_name'], y=df_shift['nva_hours'], marker_color='#D62728', text=df_shift['nva_hours'], textposition='auto'))
+        fig_comp.update_layout(barmode='stack', height=400, title="Total Man-Hours Composition: VA vs NNVA vs NVA per Shift", xaxis_title="Operational Shift", yaxis_title="Man-Hours (h)")
+        st.plotly_chart(fig_comp, use_container_width=True)
+
+        st.markdown("---")
+        
+        # Plot 2 & 3: Loss Pareto by Shift side by side
+        st.subheader("🛑 Loss Pareto Comparison: Top NVA Causes per Shift")
+        cp_day, cp_night = st.columns(2)
+        
+        with cp_day:
+            st.markdown("#### ☀️ Day Shift — Top Loss Causes")
+            df_p_day = get_shift_loss_pareto(turno="Day", estacion=sel_station, modelo=sel_model)
+            if not df_p_day.empty:
+                fig_p_day = px.bar(df_p_day.head(7), x='loss_hours', y='loss_reason', orientation='h', text='loss_hours', color='loss_hours', color_continuous_scale='Reds', title="Day Shift Loss Distribution (Hours)")
+                fig_p_day.update_layout(yaxis=dict(autorange="reversed"), height=350, showlegend=False)
+                st.plotly_chart(fig_p_day, use_container_width=True)
+                st.dataframe(df_p_day[['loss_reason', 'occurrences', 'loss_hours', 'pct_share']], use_container_width=True, hide_index=True)
+                
+        with cp_night:
+            st.markdown("#### 🌙 Night Shift — Top Loss Causes")
+            df_p_night = get_shift_loss_pareto(turno="Night", estacion=sel_station, modelo=sel_model)
+            if not df_p_night.empty:
+                fig_p_night = px.bar(df_p_night.head(7), x='loss_hours', y='loss_reason', orientation='h', text='loss_hours', color='loss_hours', color_continuous_scale='Reds', title="Night Shift Loss Distribution (Hours)")
+                fig_p_night.update_layout(yaxis=dict(autorange="reversed"), height=350, showlegend=False)
+                st.plotly_chart(fig_p_night, use_container_width=True)
+                st.dataframe(df_p_night[['loss_reason', 'occurrences', 'loss_hours', 'pct_share']], use_container_width=True, hide_index=True)
+
+        st.markdown("---")
+        
+        # Plot 4: 24-Hour Timeline Distribution
+        st.subheader("⏰ 24-Hour Factory Time Composition Timeline (Hourly Breakdown)")
+        st.markdown("Distribution of recorded time study activity across every hour of the day (00:00 to 23:00).")
+        df_timeline = get_hourly_24h_timeline(estacion=sel_station, modelo=sel_model)
+        
+        if not df_timeline.empty:
+            fig_time = go.Figure()
+            fig_time.add_trace(go.Bar(name='Value-Added (VA)', x=df_timeline['hour_label'], y=df_timeline['va_hours'], marker_color='#2CA02C'))
+            fig_time.add_trace(go.Bar(name='Necessary Non-VA (NNVA)', x=df_timeline['hour_label'], y=df_timeline['nnva_hours'], marker_color='#FF7F0E'))
+            fig_time.add_trace(go.Bar(name='Waste Loss (NVA)', x=df_timeline['hour_label'], y=df_timeline['nva_hours'], marker_color='#D62728'))
+            fig_time.update_layout(barmode='stack', height=420, title="Hourly Activity Composition (00:00 - 23:00)", xaxis_title="Hour of Day", yaxis_title="Man-Hours Recorded (h)")
+            st.plotly_chart(fig_time, use_container_width=True)
+
+# -------------------------------------------------------------
+# SCREEN 10: Data Coverage & Scope Transparency (46 HC Pool Overview)
+# -------------------------------------------------------------
+elif menu.startswith("10. 📊 Data Coverage"):
+    st.markdown('<div class="main-title">10. DATA COVERAGE & ELECTRICAL WORKFORCE OVERVIEW (46 HC POOL)</div>', unsafe_allow_html=True)
     st.markdown('<div class="concept-box">💡 <b>Confirmed Workforce Structure (46 HC Total Electrical Pool)</b>:<br/>'
                 'The electrical area has a total fixed workforce of <b>46 operators</b> across 23 physical stations. 19 HC (41%) belong to Final Assembly and sub-assemblies which are not yet measured with stopwatch chronoanalysis.</div>', unsafe_allow_html=True)
 
@@ -733,9 +836,9 @@ elif menu == "9. 📊 Data Coverage & Scope Transparency (46 HC Pool Overview)":
         st.dataframe(pivot_cov.style.format("{:.0f}"), use_container_width=True)
 
 # -------------------------------------------------------------
-# SCREEN 10: Data Audit & Sanity Suite
+# SCREEN 11: Data Audit & Sanity Suite
 # -------------------------------------------------------------
-elif menu == "10. 🔍 Data Audit & Sanity Suite":
+elif menu.startswith("11. 🔍 Data Audit"):
     st.markdown('<div class="main-title">10. DATA AUDIT & SANITY TEST SUITE</div>', unsafe_allow_html=True)
     st.markdown('<div class="concept-box">💡 <b>Sanity Assertion Suite</b>: Automated logical consistency tests guaranteeing board-survivable metrics.</div>', unsafe_allow_html=True)
 

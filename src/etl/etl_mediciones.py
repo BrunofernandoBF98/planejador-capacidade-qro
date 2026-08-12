@@ -96,9 +96,11 @@ def run_etl():
 
     load_dimension_tables(conn)
 
-    # Ingest BD_Mediciones_Detalle
-    print("Ingesting BD_Mediciones_Detalle...")
-    df_raw = pd.read_excel(PATH_ESTUDIOS, sheet_name="BD_Mediciones_Detalle", skiprows=2)
+    print("Ingesting BD_Mediciones_Limpias...")
+    try:
+        df_raw = pd.read_excel(PATH_ESTUDIOS, sheet_name="BD_Mediciones_Limpias", skiprows=2)
+    except Exception:
+        df_raw = pd.read_excel(PATH_ESTUDIOS, sheet_name="BD_Mediciones_Detalle", skiprows=2)
     valid_ops = ['0005', '0010', '0015', '0020', '0025', '0050']
     df_filtered = df_raw[df_raw['Codigo_Operacion'].astype(str).str.zfill(4).isin(valid_ops)].copy()
 
@@ -113,6 +115,32 @@ def run_etl():
         op_name = str(row.get('Nombre_Operacion', ''))
         est_name = str(row.get('Nombre_Estacion', ''))
         fecha = str(row.get('Fecha_Medicion', ''))
+        
+        # Parse time of day and shift (Day: 07:00-19:00, Night: 19:00-07:00)
+        h_ini_raw = row.get('Hora_Inicio')
+        h_fin_raw = row.get('Hora_Fin')
+        
+        hora_inicio = str(h_ini_raw).strip() if pd.notna(h_ini_raw) else ''
+        hora_fin = str(h_fin_raw).strip() if pd.notna(h_fin_raw) else ''
+        
+        shift = 'Day'
+        hora_decimal = None
+        if pd.notna(h_ini_raw):
+            try:
+                if hasattr(h_ini_raw, 'hour'):
+                    h, m, s = h_ini_raw.hour, h_ini_raw.minute, h_ini_raw.second
+                else:
+                    parts = str(h_ini_raw).strip().split(':')
+                    h = int(parts[0])
+                    m = int(parts[1]) if len(parts) > 1 else 0
+                    s = int(parts[2].split('.')[0]) if len(parts) > 2 else 0
+                
+                hora_decimal = round(h + m / 60.0 + s / 3600.0, 2)
+                shift = 'Day' if 7 <= h < 19 else 'Night'
+            except Exception:
+                shift = 'Day'
+                hora_decimal = None
+
         dur_min = float(row.get('Duracion_Minutos_Real', 0.0) or 0.0) if pd.notna(row.get('Duracion_Minutos_Real')) else 0.0
         dur_hrs = float(row.get('Duracion_Horas_Real', 0.0) or 0.0) if pd.notna(row.get('Duracion_Horas_Real')) else 0.0
         cant_op = int(row.get('Cantidad_Operadores', 1) or 1) if pd.notna(row.get('Cantidad_Operadores')) else 1
@@ -126,6 +154,7 @@ def run_etl():
 
         medicion_records.append((
             id_reg, ot, mod, fam, op_code, op_name, est_name, fecha,
+            hora_inicio, hora_fin, shift, hora_decimal,
             dur_min, dur_hrs, cant_op, min_h, hrs_h, clasif, tipo_t,
             cat_t, motivo, st_efi
         ))
@@ -133,10 +162,11 @@ def run_etl():
     cursor.executemany("""
         INSERT INTO fato_medicion (
             id_registro, id_orden_ot, modelo_disyuntor, familia_linea, codigo_operacion,
-            nombre_operacion, nombre_estacion, fecha_medicion, duracion_minutos_real,
-            duracion_horas_real, cantidad_operadores, minutos_hombre, horas_hombre,
-            codigo_clasificacion, tipo_tiempo, categoria_tiempo, motivo_detalle, status_eficiencia
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            nombre_operacion, nombre_estacion, fecha_medicion, hora_inicio, hora_fin,
+            turno, hora_decimal, duracion_minutos_real, duracion_horas_real, cantidad_operadores,
+            minutos_hombre, horas_hombre, codigo_clasificacion, tipo_tiempo, categoria_tiempo,
+            motivo_detalle, status_eficiencia
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, medicion_records)
     print(f"Ingested {len(medicion_records)} filtered measurement rows.")
 
@@ -189,49 +219,55 @@ def run_etl():
 
     # Ingest SAP_Tempos_Limpos_Op
     print("Ingesting SAP_Tempos_Limpos_Op...")
-    df_sap = pd.read_excel(PATH_ESTUDIOS, sheet_name="SAP_Tempos_Limpos_Op", skiprows=2)
-    cursor.execute("DELETE FROM fato_tempo_sap")
-    for _, r in df_sap.iterrows():
-        if pd.isna(r.get('Modelo_Interruptor')):
-            continue
-        mod = str(r['Modelo_Interruptor'])
-        op_c = str(r['Codigo_Operacion']).zfill(2)
-        op_nm = str(r['Nombre_Operacion'])
-        std_h = float(r['Std_Horas_Promedio']) if pd.notna(r.get('Std_Horas_Promedio')) else 0.0
-        real_h = float(r['Real_Horas_Promedio']) if pd.notna(r.get('Real_Horas_Promedio')) else 0.0
-        fat_int = float(r['Fator_Interno_Real_vs_Std']) if pd.notna(r.get('Fator_Interno_Real_vs_Std')) else 1.0
-        ots_sap = int(r['Total_OTs_SAP']) if pd.notna(r.get('Total_OTs_SAP')) else 0
-        flag = str(r['Flag_Confianca']) if pd.notna(r.get('Flag_Confianca')) else 'Alta'
-        
-        cursor.execute("""
-            INSERT OR REPLACE INTO fato_tempo_sap (
-                modelo, codigo_operacion, nombre_operacion, std_horas_promedio,
-                real_horas_promedio, fator_interno_real_vs_std, total_ots_sap, flag_confianca
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (mod, op_c, op_nm, std_h, real_h, fat_int, ots_sap, flag))
+    try:
+        df_sap = pd.read_excel(PATH_ESTUDIOS, sheet_name="SAP_Tempos_Limpos_Op", skiprows=2)
+        cursor.execute("DELETE FROM fato_tempo_sap")
+        for _, r in df_sap.iterrows():
+            if pd.isna(r.get('Modelo_Interruptor')):
+                continue
+            mod = str(r['Modelo_Interruptor'])
+            op_c = str(r['Codigo_Operacion']).zfill(2)
+            op_nm = str(r['Nombre_Operacion'])
+            std_h = float(r['Std_Horas_Promedio']) if pd.notna(r.get('Std_Horas_Promedio')) else 0.0
+            real_h = float(r['Real_Horas_Promedio']) if pd.notna(r.get('Real_Horas_Promedio')) else 0.0
+            fat_int = float(r['Fator_Interno_Real_vs_Std']) if pd.notna(r.get('Fator_Interno_Real_vs_Std')) else 1.0
+            ots_sap = int(r['Total_OTs_SAP']) if pd.notna(r.get('Total_OTs_SAP')) else 0
+            flag = str(r['Flag_Confianca']) if pd.notna(r.get('Flag_Confianca')) else 'Alta'
+            
+            cursor.execute("""
+                INSERT OR REPLACE INTO fato_tempo_sap (
+                    modelo, codigo_operacion, nombre_operacion, std_horas_promedio,
+                    real_horas_promedio, fator_interno_real_vs_std, total_ots_sap, flag_confianca
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (mod, op_c, op_nm, std_h, real_h, fat_int, ots_sap, flag))
+    except Exception as e:
+        print(f"Skipped SAP_Tempos_Limpos_Op: {e}")
 
     # Ingest Comparativa_3_Capadas_OP0010
     print("Ingesting Comparativa_3_Capadas_OP0010...")
-    df_3c = pd.read_excel(PATH_ESTUDIOS, sheet_name="Comparativa_3_Capadas_OP0010", skiprows=2)
-    cursor.execute("DELETE FROM fato_comparativa_3capadas")
-    for _, r in df_3c.iterrows():
-        if pd.isna(r.get('Modelo_Interruptor')):
-            continue
-        mod = str(r['Modelo_Interruptor'])
-        op_c = str(r['Codigo_Operacion']).zfill(4)
-        op_nm = str(r['Nombre_Operacion'])
-        c1_std = float(r['Camada1_Std_SAP_Horas']) if pd.notna(r.get('Camada1_Std_SAP_Horas')) else 0.0
-        c2_real = float(r['Camada2_Real_SAP_Horas']) if pd.notna(r.get('Camada2_Real_SAP_Horas')) else 0.0
-        fat_sap = float(r['Fator_Interno_SAP_Real_vs_Std']) if pd.notna(r.get('Fator_Interno_SAP_Real_vs_Std')) else 1.0
-        c3_p50 = float(r['Camada3_Cronoanalisis_Limpa_P50_Horas']) if pd.notna(r.get('Camada3_Cronoanalisis_Limpa_P50_Horas')) else 0.0
-        c3_p80 = float(r['Cronoanalisis_Limpa_P80_Horas']) if pd.notna(r.get('Cronoanalisis_Limpa_P80_Horas')) else 0.0
-        
-        cursor.execute("""
-            INSERT INTO fato_comparativa_3capadas (
-                modelo, codigo_operacion, nombre_operacion, camada1_std_sap_horas,
-                camada2_real_sap_horas, fator_interno_sap, camada3_crono_p50_horas, camada3_crono_p80_horas
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (mod, op_c, op_nm, c1_std, c2_real, fat_sap, c3_p50, c3_p80))
+    try:
+        df_3c = pd.read_excel(PATH_ESTUDIOS, sheet_name="Comparativa_3_Capadas_OP0010", skiprows=2)
+        cursor.execute("DELETE FROM fato_comparativa_3capadas")
+        for _, r in df_3c.iterrows():
+            if pd.isna(r.get('Modelo_Interruptor')):
+                continue
+            mod = str(r['Modelo_Interruptor'])
+            op_c = str(r['Codigo_Operacion']).zfill(4)
+            op_nm = str(r['Nombre_Operacion'])
+            std_sap = float(r['Camada1_Std_SAP_Horas']) if pd.notna(r.get('Camada1_Std_SAP_Horas')) else 0.0
+            real_sap = float(r['Camada2_Real_SAP_Horas']) if pd.notna(r.get('Camada2_Real_SAP_Horas')) else 0.0
+            fat_int = float(r['Fator_Interno_SAP']) if pd.notna(r.get('Fator_Interno_SAP')) else 1.0
+            crono_p50 = float(r['Camada3_Crono_P50_Horas']) if pd.notna(r.get('Camada3_Crono_P50_Horas')) else 0.0
+            crono_p80 = float(r['Camada3_Crono_P80_Horas']) if pd.notna(r.get('Camada3_Crono_P80_Horas')) else 0.0
+            
+            cursor.execute("""
+                INSERT OR REPLACE INTO fato_comparativa_3capadas (
+                    modelo, codigo_operacion, nombre_operacion, camada1_std_sap_horas,
+                    camada2_real_sap_horas, fator_interno_sap, camada3_crono_p50_horas, camada3_crono_p80_horas
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (mod, op_c, op_nm, std_sap, real_sap, fat_int, crono_p50, crono_p80))
+    except Exception as e:
+        print(f"Skipped Comparativa_3_Capadas_OP0010: {e}")
 
     # Ingest Book1.xlsx
     print("Ingesting Book1.xlsx...")
