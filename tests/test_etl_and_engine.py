@@ -134,3 +134,35 @@ def test_shift_performance_and_hourly_timeline():
     df_time = get_hourly_24h_timeline()
     assert len(df_time) == 24
     assert df_time['total_hours'].sum() > 0
+
+def test_pareto_station_filtering_consistency():
+    from src.engine.capacity_engine import get_pareto_nva_corrected, get_pareto_nnva_corrected
+    
+    # 1. Test Static Baseline (modo_demanda=False)
+    df_nva_all, tot_nva_all = get_pareto_nva_corrected(estacion="Todas", modo_demanda=False)
+    df_nva_cf, tot_nva_cf = get_pareto_nva_corrected(estacion="Control Frame Station", modo_demanda=False)
+    df_nva_pool, tot_nva_pool = get_pareto_nva_corrected(estacion="Control Frame — CFE+Jupiter (8 st.)", modo_demanda=False)
+    
+    assert tot_nva_all > 0
+    assert tot_nva_cf <= tot_nva_all, f"Station NVA {tot_nva_cf} must be <= Total {tot_nva_all}"
+    assert tot_nva_pool == tot_nva_cf, "Pool name normalization failed"
+    
+    # 2. Test Demand-Driven Baseline (modo_demanda=True)
+    df_dem_all, tot_dem_all = get_pareto_nva_corrected(estacion="Todas", modo_demanda=True)
+    df_dem_cf, tot_dem_cf = get_pareto_nva_corrected(estacion="Control Frame Station", modo_demanda=True)
+    df_dem_wire, tot_dem_wire = get_pareto_nva_corrected(estacion="Wire Cutting Station", modo_demanda=True)
+    
+    assert tot_dem_all > 0
+    assert tot_dem_cf < tot_dem_all, f"Control Frame demand NVA {tot_dem_cf} must be < Total {tot_dem_all}"
+    assert tot_dem_wire < tot_dem_all, f"Wire Cutting demand NVA {tot_dem_wire} must be < Total {tot_dem_all}"
+    
+    # 3. Test NNVA Consistency
+    df_nnva_all, tot_nnva_all = get_pareto_nnva_corrected(estacion="Todas", modo_demanda=False)
+    df_nnva_cf, tot_nnva_cf = get_pareto_nnva_corrected(estacion="Control Frame Station", modo_demanda=False)
+    assert tot_nnva_cf <= tot_nnva_all, f"Station NNVA {tot_nnva_cf} must be <= Total {tot_nnva_all}"
+    
+    # 4. Test Unmeasured Station returns 0 with empty df (No fake mock data)
+    df_empty, tot_empty = get_pareto_nva_corrected(estacion="Unmeasured Nonexistent Station", modo_demanda=False)
+    assert tot_empty == 0.0
+    assert df_empty.empty
+

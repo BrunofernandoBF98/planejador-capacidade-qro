@@ -567,7 +567,7 @@ elif menu == "7. 🛑 Waste & NVA Pareto Analysis":
 
     col_p1, col_p2 = st.columns(2)
     with col_p1:
-        estacion_pareto = st.selectbox("Filter by Station / Pool:", ["Todas", "Control Frame — CFE+Jupiter (8 st.)", "Control Frame — JXN (4 st.)", "Wire Cutting Station", "Harness Enablement Station", "Cabinet Enablement Station", "Door Enablement Station", "Continuity Test Station"])
+        estacion_pareto = st.selectbox("Filter by Station / Pool:", ["Todas", "Control Frame Station", "Wire Cutting Station", "Harness Enablement Station", "Cabinet Enablement Station", "Door Enablement Station", "Continuity Test Station"])
     with col_p2:
         modo_pareto = st.radio("NVA Calculation Basis:", ["Demand-Driven Forecast (Monthly Units × Model NVA/Unit)", "Static Stopwatch Video Sample Baseline (Raw Sample)"], index=0)
 
@@ -622,6 +622,8 @@ elif menu == "7. 🛑 Waste & NVA Pareto Analysis":
         
         st.info(f"💡 **Eliminating the Top 3 Waste Causes** ({top3_hh:.1f} Monthly Hours Lost) **frees {top3_ops} Full-Time Equivalent Operators** ({res['horas_disp_periodo']:.0f}h/person/month available).")
         st.dataframe(df_pareto[['motivo_reclassificado', 'ocorrencias', 'horas_perdidas', 'pct_individual', 'pct_acumulado', 'pessoas_equivalentes']], use_container_width=True)
+    else:
+        st.info("ℹ️ No NVA waste recorded for the selected workstation / filters.")
 
 # -------------------------------------------------------------
 # SCREEN 8: Necessary Non-Value-Added (NNVA) Process Analysis
@@ -633,7 +635,7 @@ elif menu == "8. 🛠️ Necessary Non-Value-Added (NNVA) Process Analysis":
 
     col_nn1, col_nn2 = st.columns(2)
     with col_nn1:
-        estacion_nnva = st.selectbox("Filter by Station / Pool (NNVA):", ["Todas", "Control Frame — CFE+Jupiter (8 st.)", "Control Frame — JXN (4 st.)", "Wire Cutting Station", "Harness Enablement Station", "Cabinet Enablement Station", "Door Enablement Station", "Continuity Test Station"])
+        estacion_nnva = st.selectbox("Filter by Station / Pool (NNVA):", ["Todas", "Control Frame Station", "Wire Cutting Station", "Harness Enablement Station", "Cabinet Enablement Station", "Door Enablement Station", "Continuity Test Station"])
     with col_nn2:
         modo_nnva = st.radio("NNVA Calculation Basis:", ["Demand-Driven Forecast (Monthly Units × Model NNVA/Unit)", "Static Stopwatch Video Sample Baseline (Raw Sample)"], index=0)
 

@@ -487,9 +487,35 @@ def get_model_complexity_index():
 # -------------------------------------------------------------
 # 10. WASTE & NVA PARETO ANALYSIS (ENGLISH TRANSLATIONS)
 # -------------------------------------------------------------
+def _normalize_station_name(estacion):
+    """
+    Normalizes user-facing dropdown / pool station names to the exact
+    physical measurement station name stored in fato_medicion.
+    """
+    if not estacion:
+        return None
+    s = str(estacion).strip()
+    if s.lower() in ["todas", "all", "none", "consolidado", "consolidated", ""]:
+        return None
+    if "control frame" in s.lower():
+        return "Control Frame Station"
+    if "wire" in s.lower():
+        return "Wire Cutting Station"
+    if "harness" in s.lower():
+        return "Harness Enablement Station"
+    if "cabinet" in s.lower():
+        return "Cabinet Enablement Station"
+    if "door" in s.lower():
+        return "Door Enablement Station"
+    if "continuity" in s.lower():
+        return "Continuity Test Station"
+    return s
+
+
 def get_pareto_nva_corrected(estacion=None, turnos=1, horas_turno=8.0, descanso_h=1.0, dias_uteis=20, mercado="Todos", ano=2027, modo_demanda=True):
     resource = get_dynamic_available_hours(turnos, horas_turno, descanso_h, dias_uteis)
     h_disp_per = resource['horas_disp_periodo']
+    norm_estacion = _normalize_station_name(estacion)
 
     sql_causes = """
         SELECT 
@@ -519,27 +545,32 @@ def get_pareto_nva_corrected(estacion=None, turnos=1, horas_turno=8.0, descanso_
           AND motivo_detalle NOT LIKE '%Descanso Legítimo%'
     """
     params_causes = []
-    if estacion and estacion != "Todas":
+    if norm_estacion:
         sql_causes += " AND nombre_estacion = ?"
-        params_causes.append(estacion)
+        params_causes.append(norm_estacion)
 
     sql_causes += " GROUP BY motivo_reclassificado ORDER BY horas_amostra DESC"
     df_causes = run_query(sql_causes, params=tuple(params_causes))
 
     if df_causes.empty:
-        df_causes = pd.DataFrame([
-            {"motivo_reclassificado": "Unplanned Operator Absence", "ocorrencias": 115, "horas_amostra": 145.2},
-            {"motivo_reclassificado": "Interpersonal Distraction", "ocorrencias": 45, "horas_amostra": 14.5},
-            {"motivo_reclassificado": "Unspecified Idle Time", "ocorrencias": 30, "horas_amostra": 8.9},
-            {"motivo_reclassificado": "Other Idle Time", "ocorrencias": 25, "horas_amostra": 6.8},
-            {"motivo_reclassificado": "Trolley & Kit Movement", "ocorrencias": 20, "horas_amostra": 6.7}
+        empty_df = pd.DataFrame(columns=[
+            'motivo_reclassificado', 'ocorrencias', 'horas_perdidas',
+            'pct_individual', 'pct_acumulado', 'pessoas_equivalentes', 'rotulo_barra'
         ])
-
-    tot_amostra = df_causes['horas_amostra'].sum()
-    df_causes['pct_causa'] = df_causes['horas_amostra'] / (tot_amostra if tot_amostra > 0 else 1.0)
+        return empty_df, 0.0
 
     if modo_demanda:
-        # Demand-driven NVA waste projection formula:
+        # Total factory sample NVA baseline across all measured stations
+        sql_tot_sample = """
+            SELECT SUM(horas_hombre) as tot_factory
+            FROM fato_medicion
+            WHERE (codigo_clasificacion = 'NVA' OR tipo_tiempo LIKE '%Muerto%')
+              AND motivo_detalle NOT LIKE '%Descanso Legítimo%'
+        """
+        df_tot_s = run_query(sql_tot_sample)
+        tot_amostra_factory = float(df_tot_s.iloc[0]['tot_factory']) if not df_tot_s.empty and pd.notna(df_tot_s.iloc[0]['tot_factory']) else df_causes['horas_amostra'].sum()
+
+        # Demand-driven factory NVA waste projection formula:
         # Sum(Monthly Units for Model y * NVA Hours/Unit for Model y)
         sql_demand = """
             SELECT d.modelo, SUM(d.quantidade) / 12.0 as demanda_mensual
@@ -580,11 +611,13 @@ def get_pareto_nva_corrected(estacion=None, turnos=1, horas_turno=8.0, descanso_
             df_merged = pd.merge(df_dem, df_nva_unit, on='modelo_base', how='left')
             df_merged['nva_h_unit'] = df_merged['nva_h_unit'].fillna(15.0)
             df_merged['total_nva_mensual'] = df_merged['demanda_mensual'] * df_merged['nva_h_unit']
-            total_nva_proj = df_merged['total_nva_mensual'].sum()
+            total_nva_proj_factory = df_merged['total_nva_mensual'].sum()
         else:
-            total_nva_proj = tot_amostra
+            total_nva_proj_factory = tot_amostra_factory
 
-        df_causes['horas_perdidas'] = round(df_causes['pct_causa'] * total_nva_proj, 1)
+        # Scale by each cause's contribution to factory baseline (ensures station demand proportion is respected)
+        factor = total_nva_proj_factory / (tot_amostra_factory if tot_amostra_factory > 0 else 1.0)
+        df_causes['horas_perdidas'] = round(df_causes['horas_amostra'] * factor, 1)
     else:
         df_causes['horas_perdidas'] = round(df_causes['horas_amostra'], 1)
 
@@ -601,6 +634,7 @@ def get_pareto_nva_corrected(estacion=None, turnos=1, horas_turno=8.0, descanso_
 def get_pareto_nnva_corrected(estacion=None, turnos=1, horas_turno=8.0, descanso_h=1.0, dias_uteis=20, mercado="Todos", ano=2027, modo_demanda=True):
     resource = get_dynamic_available_hours(turnos, horas_turno, descanso_h, dias_uteis)
     h_disp_per = resource['horas_disp_periodo']
+    norm_estacion = _normalize_station_name(estacion)
 
     sql_causes = """
         SELECT 
@@ -621,26 +655,31 @@ def get_pareto_nnva_corrected(estacion=None, turnos=1, horas_turno=8.0, descanso
           AND motivo_detalle NOT LIKE '%Descanso Legítimo%'
     """
     params_causes = []
-    if estacion and estacion != "Todas":
+    if norm_estacion:
         sql_causes += " AND nombre_estacion = ?"
-        params_causes.append(estacion)
+        params_causes.append(norm_estacion)
 
     sql_causes += " GROUP BY motivo_reclassificado ORDER BY horas_amostra DESC"
     df_causes = run_query(sql_causes, params=tuple(params_causes))
 
     if df_causes.empty:
-        df_causes = pd.DataFrame([
-            {"motivo_reclassificado": "Drawing & DWG Consultation", "ocorrencias": 591, "horas_amostra": 11.94},
-            {"motivo_reclassificado": "Data Logging & Board Entry", "ocorrencias": 232, "horas_amostra": 8.60},
-            {"motivo_reclassificado": "Quality & Visual Verification", "ocorrencias": 119, "horas_amostra": 4.07},
-            {"motivo_reclassificado": "Tooling Setup & Fixture Prep", "ocorrencias": 152, "horas_amostra": 3.19},
-            {"motivo_reclassificado": "Wiring & Process Adjustments", "ocorrencias": 38, "horas_amostra": 1.11}
+        empty_df = pd.DataFrame(columns=[
+            'motivo_reclassificado', 'ocorrencias', 'horas_perdidas',
+            'pct_individual', 'pct_acumulado', 'pessoas_equivalentes', 'rotulo_barra'
         ])
-
-    tot_amostra = df_causes['horas_amostra'].sum()
-    df_causes['pct_causa'] = df_causes['horas_amostra'] / (tot_amostra if tot_amostra > 0 else 1.0)
+        return empty_df, 0.0
 
     if modo_demanda:
+        # Total factory sample NNVA baseline across all measured stations
+        sql_tot_sample = """
+            SELECT SUM(horas_hombre) as tot_factory
+            FROM fato_medicion
+            WHERE (codigo_clasificacion = 'NNVA' OR tipo_tiempo LIKE '%Necesario%')
+              AND motivo_detalle NOT LIKE '%Descanso Legítimo%'
+        """
+        df_tot_s = run_query(sql_tot_sample)
+        tot_amostra_factory = float(df_tot_s.iloc[0]['tot_factory']) if not df_tot_s.empty and pd.notna(df_tot_s.iloc[0]['tot_factory']) else df_causes['horas_amostra'].sum()
+
         sql_demand = """
             SELECT d.modelo, SUM(d.quantidade) / 12.0 as demanda_mensual
             FROM fato_demanda_mercado d
@@ -680,11 +719,12 @@ def get_pareto_nnva_corrected(estacion=None, turnos=1, horas_turno=8.0, descanso
             df_merged = pd.merge(df_dem, df_nnva_unit, on='modelo_base', how='left')
             df_merged['nnva_h_unit'] = df_merged['nnva_h_unit'].fillna(3.85)
             df_merged['total_nnva_mensual'] = df_merged['demanda_mensual'] * df_merged['nnva_h_unit']
-            total_nnva_proj = df_merged['total_nnva_mensual'].sum()
+            total_nnva_proj_factory = df_merged['total_nnva_mensual'].sum()
         else:
-            total_nnva_proj = tot_amostra
+            total_nnva_proj_factory = tot_amostra_factory
 
-        df_causes['horas_perdidas'] = round(df_causes['pct_causa'] * total_nnva_proj, 1)
+        factor = total_nnva_proj_factory / (tot_amostra_factory if tot_amostra_factory > 0 else 1.0)
+        df_causes['horas_perdidas'] = round(df_causes['horas_amostra'] * factor, 1)
     else:
         df_causes['horas_perdidas'] = round(df_causes['horas_amostra'], 1)
 
