@@ -8,10 +8,10 @@ import math
 import os
 import sys
 
-sys.path.append(os.path.abspath(os.path.dirname(__file__)))
-import importlib
-import src.engine.capacity_engine
-importlib.reload(src.engine.capacity_engine)
+ROOT_DIR = os.path.abspath(os.path.dirname(__file__))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
 from src.engine.capacity_engine import (
     get_dynamic_available_hours,
     get_market_demand,
