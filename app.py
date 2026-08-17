@@ -176,36 +176,71 @@ if menu == "1. 🏠 Executive Dashboard":
 
     st.markdown("---")
     st.subheader("📊 1. Flagship Yamazumi: Station Cycle Time (VA / NNVA / NVA) vs Line Takt")
-    st.caption("📐 **Calculation & Formula**: Stacked Stopwatch P50 Cycle Time (Minutes/Unit) = Value-Added (38.5%) + Necessary Non-Value-Added (12.5%) + NVA Waste (49.0%). Dashed line represents Required Line Takt Time (Minutes/Unit = Net Available Working Minutes/Month ÷ Monthly Sales Units). Time Horizon: **Unit Level (Minutes/Unit)**.")
+    st.caption("📐 **Calculation & Formula**: Stacked Stopwatch P50 Cycle Time = Value-Added (38.5%) + Necessary Non-Value-Added (12.5%) + NVA Waste (49.0%). Dashed line represents Required Line Takt Time (= Net Available Working Time/Month ÷ Monthly Sales Units). Time Horizon: **Unit Level**.")
     
-    yam_components = st.multiselect(
-        "🎯 Filter Yamazumi Time Components:",
-        options=["Value-Added (VA)", "Necessary Non-Value-Added (NNVA)", "NVA Waste"],
-        default=["Value-Added (VA)", "Necessary Non-Value-Added (NNVA)", "NVA Waste"],
-        help="Select which cycle time breakdown components (VA, NNVA, NVA Waste) to display in the chart."
-    )
+    col_yam1, col_yam2 = st.columns([3, 1])
+    with col_yam1:
+        yam_components = st.multiselect(
+            "🎯 Filter Yamazumi Time Components:",
+            options=["Value-Added (VA)", "Necessary Non-Value-Added (NNVA)", "NVA Waste"],
+            default=["Value-Added (VA)", "Necessary Non-Value-Added (NNVA)", "NVA Waste"],
+            help="Select which cycle time breakdown components (VA, NNVA, NVA Waste) to display in the chart."
+        )
+    with col_yam2:
+        yam_unit = st.radio("⏱️ Time Unit:", ["Hours (h/unit)", "Minutes (min/unit)"], index=0, horizontal=True)
+
+    use_hours = yam_unit.startswith("Hours")
+    div_factor = 60.0 if use_hours else 1.0
+    unit_label = "Hours / Unit" if use_hours else "Minutes / Unit"
+    unit_suffix = "h" if use_hours else "min"
 
     df_yam = df_takt.copy()
-    df_yam['va_min'] = round(df_yam['ciclo_mins_p50'] * 0.385, 1)
-    df_yam['nnva_min'] = round(df_yam['ciclo_mins_p50'] * 0.125, 1)
-    df_yam['nva_min'] = round(df_yam['ciclo_mins_p50'] * 0.490, 1)
+    df_yam['va_val'] = round((df_yam['ciclo_mins_p50'] * 0.385) / div_factor, 2 if use_hours else 1)
+    df_yam['nnva_val'] = round((df_yam['ciclo_mins_p50'] * 0.125) / div_factor, 2 if use_hours else 1)
+    df_yam['nva_val'] = round((df_yam['ciclo_mins_p50'] * 0.490) / div_factor, 2 if use_hours else 1)
 
     fig_yam = go.Figure()
     if "Value-Added (VA)" in yam_components:
-        fig_yam.add_trace(go.Bar(x=df_yam['nombre_estacion'], y=df_yam['va_min'], name="1. Value-Added (VA - 38.5%)", marker_color="#5CB85C", text=df_yam['va_min'], textposition="inside"))
+        fig_yam.add_trace(go.Bar(
+            x=df_yam['nombre_estacion'], 
+            y=df_yam['va_val'], 
+            name="1. Value-Added (VA - 38.5%)", 
+            marker_color="#5CB85C", 
+            text=[f"{v:.1f}{unit_suffix}" if use_hours else f"{v:.0f}" for v in df_yam['va_val']], 
+            textposition="inside"
+        ))
     if "Necessary Non-Value-Added (NNVA)" in yam_components:
-        fig_yam.add_trace(go.Bar(x=df_yam['nombre_estacion'], y=df_yam['nnva_min'], name="2. Necessary Non-Value-Added (NNVA - 12.5%)", marker_color="#F0AD4E", text=df_yam['nnva_min'], textposition="inside"))
+        fig_yam.add_trace(go.Bar(
+            x=df_yam['nombre_estacion'], 
+            y=df_yam['nnva_val'], 
+            name="2. Necessary Non-Value-Added (NNVA - 12.5%)", 
+            marker_color="#F0AD4E", 
+            text=[f"{v:.1f}{unit_suffix}" if use_hours else f"{v:.0f}" for v in df_yam['nnva_val']], 
+            textposition="inside"
+        ))
     if "NVA Waste" in yam_components:
-        fig_yam.add_trace(go.Bar(x=df_yam['nombre_estacion'], y=df_yam['nva_min'], name="3. Waste / Non-Value-Added (NVA - 49.0%)", marker_color="#D9534F", text=df_yam['nva_min'], textposition="inside"))
+        fig_yam.add_trace(go.Bar(
+            x=df_yam['nombre_estacion'], 
+            y=df_yam['nva_val'], 
+            name="3. Waste / Non-Value-Added (NVA - 49.0%)", 
+            marker_color="#D9534F", 
+            text=[f"{v:.1f}{unit_suffix}" if use_hours else f"{v:.0f}" for v in df_yam['nva_val']], 
+            textposition="inside"
+        ))
     
-    takt_line_val = takt_m
-    fig_yam.add_hline(y=takt_line_val, line_dash="dash", line_color="#002B49", annotation_text=f"Line Takt Time ({takt_line_val:.1f} min)")
+    takt_line_val = (takt_m / 60.0) if use_hours else takt_m
+    fig_yam.add_hline(
+        y=takt_line_val, 
+        line_dash="dash", 
+        line_color="#002B49", 
+        annotation_text=f"Line Takt Time ({takt_line_val:.1f} {unit_suffix})"
+    )
 
     fig_yam.update_layout(
         barmode="stack",
-        title="Yamazumi Workstation Cycle Breakdown (VA vs NNVA vs NVA) vs Line Takt",
+        title=f"Yamazumi Workstation Cycle Breakdown (VA vs NNVA vs NVA) vs Line Takt ({unit_label})",
         xaxis_title="Work Station / Production Pool",
-        yaxis_title="Cycle Time (Minutes / Unit)",
+        yaxis_title=f"Cycle Time ({unit_label})",
         height=450,
         legend=dict(orientation="h", y=1.12, x=0.05)
     )
