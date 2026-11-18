@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import networkx as nx
 import math
 import os
@@ -130,6 +131,96 @@ def render_kpi_card(title, value, status, status_color, source, reference, rule_
         </div>
     """, unsafe_allow_html=True)
 
+def _short_station_label(name):
+    s = str(name)
+    mapping = {
+        "Control Frame — CFE+Jupiter (8 small + free large posts)": "CF — CFE+Jupiter",
+        "Control Frame — JXN (4 large stations / 8 posts)": "CF — JXN (Large)",
+        "Wire Cutting Station": "Wire Cutting",
+        "Harness Enablement Station": "Harness Enabl.",
+        "Cabinet Enablement Station": "Cabinet Enabl.",
+        "Door Enablement Station": "Door Enabl.",
+        "Sub-Assembly Station": "Sub-Assembly",
+        "Continuity Test Station": "Continuity Test",
+    }
+    return mapping.get(s, s.replace(" Station", ""))
+
+
+def _add_yamazumi_panel_traces(fig, df_sub, use_hours, unit_suffix, yam_components, takt_line_val, row=None, col=None, show_legend=True, show_takt_label=True):
+    x_short = [_short_station_label(n) for n in df_sub['nombre_estacion']]
+    x_full = df_sub['nombre_estacion'].tolist()
+
+    va_vals = df_sub['va_val'] if "Value-Added (VA)" in yam_components else pd.Series([0.0] * len(df_sub), index=df_sub.index)
+    nnva_vals = df_sub['nnva_val'] if "Necessary Non-Value-Added (NNVA)" in yam_components else pd.Series([0.0] * len(df_sub), index=df_sub.index)
+    nva_vals = df_sub['nva_val'] if "NVA Waste" in yam_components else pd.Series([0.0] * len(df_sub), index=df_sub.index)
+    totals = va_vals + nnva_vals + nva_vals
+
+    bar_max = float(totals.max()) if not totals.empty and totals.max() > 0 else 1.0
+    takt_in_range = takt_line_val <= max(bar_max * 1.8, 12.0 if use_hours else 720.0)
+    y_top_data = max(bar_max, takt_line_val if takt_in_range else bar_max)
+    y_range_max = y_top_data * 1.22
+
+    fmt = (lambda v: f"{v:.1f}{unit_suffix}") if use_hours else (lambda v: f"{v:.0f}m")
+    loc_kw = {"row": row, "col": col} if row is not None and col is not None else {}
+
+    traces = [
+        ("Value-Added (VA)", "va", "1. Value-Added (VA - 38.5%)", "#5CB85C", va_vals),
+        ("Necessary Non-Value-Added (NNVA)", "nnva", "2. Necessary Non-Value-Added (NNVA - 10.3%)", "#F0AD4E", nnva_vals),
+        ("NVA Waste", "nva", "3. Waste / Non-Value-Added (NVA - 51.2%)", "#D9534F", nva_vals),
+    ]
+    for comp_key, lgroup, trace_name, color, vals in traces:
+        if comp_key in yam_components:
+            seg_texts = [fmt(v) if (v / y_range_max) >= 0.085 else "" for v in vals]
+            fig.add_trace(
+                go.Bar(
+                    x=x_short,
+                    y=vals,
+                    customdata=x_full,
+                    name=trace_name,
+                    legendgroup=lgroup,
+                    showlegend=show_legend,
+                    marker_color=color,
+                    text=seg_texts,
+                    textposition="inside",
+                    insidetextanchor="middle",
+                    textfont=dict(color="white", size=11),
+                    hovertemplate="%{customdata}<br>" + trace_name + ": %{y:.2f} " + unit_suffix + "<extra></extra>",
+                ),
+                **loc_kw,
+            )
+
+    # Always-visible total label above every stacked bar
+    tot_texts = [f"<b>{fmt(t)}</b>" for t in totals]
+    fig.add_trace(
+        go.Scatter(
+            x=x_short,
+            y=totals,
+            mode="text",
+            text=tot_texts,
+            textposition="top center",
+            textfont=dict(size=12, color="#002B49"),
+            showlegend=False,
+            hoverinfo="skip",
+        ),
+        **loc_kw,
+    )
+
+    if takt_in_range:
+        hline_kw = {
+            "y": takt_line_val,
+            "line_dash": "dash",
+            "line_color": "#002B49",
+            "line_width": 2,
+        }
+        if show_takt_label:
+            hline_kw["annotation_text"] = f"<b>Line Takt ({takt_line_val:.1f} {unit_suffix})</b>"
+            hline_kw["annotation_position"] = "top right"
+            hline_kw["annotation_font"] = dict(color="#002B49", size=11)
+        fig.add_hline(**hline_kw, **loc_kw)
+
+    return y_range_max
+
+
 # Shared calculated data
 res = get_dynamic_available_hours(turnos_sel, horas_turno_sel, descanso_sel, dias_uteis_sel)
 df_takt, takt_h, takt_m, takt_ef, vol_m = get_takt_time_analysis(mercado_query, ano_sel, turnos_sel, horas_turno_sel, descanso_sel, dias_uteis_sel, flex_toggle)
@@ -178,7 +269,7 @@ if menu == "1. 🏠 Executive Dashboard":
     st.subheader("📊 1. Flagship Yamazumi: Station Cycle Time (VA / NNVA / NVA) vs Line Takt")
     st.caption("📐 **Calculation & Formula**: Stacked Stopwatch P50 Cycle Time = Value-Added (38.5%) + Necessary Non-Value-Added (10.3%) + NVA Waste (51.2%). Dashed line represents Required Line Takt Time (= Net Available Working Time/Month ÷ Monthly Sales Units). Time Horizon: **Unit Level**.")
     
-    col_yam1, col_yam2 = st.columns([3, 1])
+    col_yam1, col_yam2, col_yam3 = st.columns([2.1, 1.0, 1.2])
     with col_yam1:
         yam_components = st.multiselect(
             "🎯 Filter Yamazumi Time Components:",
@@ -188,6 +279,8 @@ if menu == "1. 🏠 Executive Dashboard":
         )
     with col_yam2:
         yam_unit = st.radio("⏱️ Time Unit:", ["Hours (h/unit)", "Minutes (min/unit)"], index=0, horizontal=True)
+    with col_yam3:
+        yam_scale = st.radio("🔎 Chart Scale:", ["Split Scale (Recommended)", "Unified Single Scale"], index=0, horizontal=True)
 
     use_hours = yam_unit.startswith("Hours")
     div_factor = 60.0 if use_hours else 1.0
@@ -198,53 +291,46 @@ if menu == "1. 🏠 Executive Dashboard":
     df_yam['va_val'] = round((df_yam['ciclo_mins_p50'] * 0.385) / div_factor, 2 if use_hours else 1)
     df_yam['nnva_val'] = round((df_yam['ciclo_mins_p50'] * 0.103) / div_factor, 2 if use_hours else 1)
     df_yam['nva_val'] = round((df_yam['ciclo_mins_p50'] * 0.512) / div_factor, 2 if use_hours else 1)
+    df_yam['total_val'] = df_yam['va_val'] + df_yam['nnva_val'] + df_yam['nva_val']
 
-    fig_yam = go.Figure()
-    if "Value-Added (VA)" in yam_components:
-        fig_yam.add_trace(go.Bar(
-            x=df_yam['nombre_estacion'], 
-            y=df_yam['va_val'], 
-            name="1. Value-Added (VA - 38.5%)", 
-            marker_color="#5CB85C", 
-            text=[f"{v:.1f}{unit_suffix}" if use_hours else f"{v:.0f}" for v in df_yam['va_val']], 
-            textposition="inside"
-        ))
-    if "Necessary Non-Value-Added (NNVA)" in yam_components:
-        fig_yam.add_trace(go.Bar(
-            x=df_yam['nombre_estacion'], 
-            y=df_yam['nnva_val'], 
-            name="2. Necessary Non-Value-Added (NNVA - 10.3%)", 
-            marker_color="#F0AD4E", 
-            text=[f"{v:.1f}{unit_suffix}" if use_hours else f"{v:.0f}" for v in df_yam['nnva_val']], 
-            textposition="inside"
-        ))
-    if "NVA Waste" in yam_components:
-        fig_yam.add_trace(go.Bar(
-            x=df_yam['nombre_estacion'], 
-            y=df_yam['nva_val'], 
-            name="3. Waste / Non-Value-Added (NVA - 51.2%)", 
-            marker_color="#D9534F", 
-            text=[f"{v:.1f}{unit_suffix}" if use_hours else f"{v:.0f}" for v in df_yam['nva_val']], 
-            textposition="inside"
-        ))
-    
     takt_line_val = (takt_m / 60.0) if use_hours else takt_m
-    fig_yam.add_hline(
-        y=takt_line_val, 
-        line_dash="dash", 
-        line_color="#002B49", 
-        annotation_text=f"Line Takt Time ({takt_line_val:.1f} {unit_suffix})"
-    )
+    is_cf = df_yam['nombre_estacion'].str.contains("Control Frame", case=False, na=False)
+    df_yam_cf = df_yam[is_cf]
+    df_yam_other = df_yam[~is_cf]
+
+    if yam_scale.startswith("Split") and not df_yam_cf.empty and not df_yam_other.empty:
+        fig_yam = make_subplots(
+            rows=1, cols=2,
+            column_widths=[0.28, 0.72],
+            horizontal_spacing=0.08,
+            subplot_titles=("Control Frame Pools (High Work Content)", "Enablement, Sub-Assembly & Test (Zoomed Scale)")
+        )
+        y1_max = _add_yamazumi_panel_traces(fig_yam, df_yam_cf, use_hours, unit_suffix, yam_components, takt_line_val, row=1, col=1, show_legend=True, show_takt_label=False)
+        y2_max = _add_yamazumi_panel_traces(fig_yam, df_yam_other, use_hours, unit_suffix, yam_components, takt_line_val, row=1, col=2, show_legend=False, show_takt_label=True)
+        fig_yam.update_yaxes(title_text=f"Cycle Time ({unit_label})", range=[0, y1_max], row=1, col=1)
+        fig_yam.update_yaxes(title_text=f"Cycle Time ({unit_label})", range=[0, y2_max], row=1, col=2)
+        fig_yam.update_xaxes(tickangle=-18, row=1, col=1)
+        fig_yam.update_xaxes(tickangle=-18, row=1, col=2)
+    else:
+        fig_yam = go.Figure()
+        y_max = _add_yamazumi_panel_traces(fig_yam, df_yam, use_hours, unit_suffix, yam_components, takt_line_val, show_legend=True, show_takt_label=True)
+        fig_yam.update_yaxes(title_text=f"Cycle Time ({unit_label})", range=[0, y_max])
+        fig_yam.update_xaxes(title_text="Work Station / Production Pool", tickangle=-20)
 
     fig_yam.update_layout(
         barmode="stack",
-        title=f"Yamazumi Workstation Cycle Breakdown (VA vs NNVA vs NVA) vs Line Takt ({unit_label})",
-        xaxis_title="Work Station / Production Pool",
-        yaxis_title=f"Cycle Time ({unit_label})",
-        height=450,
-        legend=dict(orientation="h", y=1.12, x=0.05)
+        title=f"Yamazumi Workstation Cycle Breakdown (VA vs NNVA vs NVA) vs Line Takt ({unit_label}) — Takt: {takt_line_val:.1f} {unit_suffix}",
+        height=500,
+        margin=dict(t=95, b=85, l=55, r=30),
+        legend=dict(orientation="h", y=1.14, x=0.0)
     )
     st.plotly_chart(fig_yam, use_container_width=True)
+
+    with st.expander("📋 Exact Yamazumi Cycle Time Values per Station", expanded=False):
+        df_yam_tbl = df_yam[['nombre_estacion', 'va_val', 'nnva_val', 'nva_val', 'total_val']].copy()
+        df_yam_tbl['Line Takt'] = round(takt_line_val, 2 if use_hours else 1)
+        df_yam_tbl.columns = ['Workstation / Pool', f'VA ({unit_suffix})', f'NNVA ({unit_suffix})', f'NVA ({unit_suffix})', f'Total Cycle ({unit_suffix})', f'Line Takt ({unit_suffix})']
+        st.dataframe(df_yam_tbl, use_container_width=True, hide_index=True)
 
     c_left, c_right = st.columns(2)
     with c_left:
@@ -252,28 +338,44 @@ if menu == "1. 🏠 Executive Dashboard":
         st.caption("📐 **Calculation & Formula**: Required Operators = Total Monthly Workload Hours (Monthly Units × Unit Hours) ÷ Net Available Hours/Person/Month. Time Horizon: **Monthly View (Operators Required/Month)**.")
         fig_hc_home = go.Figure()
         active_baseline_label = "Measured Reality (38.5% VA)" if "Measured" in eficiencia_sel else "Siemens Standard (85% Target)"
+        hc_x_short = [_short_station_label(n) for n in df_hc['estacion']]
+        hc_comp_vals = df_hc['paso5_personas_meta85'] if "Measured" in eficiencia_sel else df_hc['paso5_personas_real']
+        hc_y_max = max(float(df_hc['active_personas_requeridas'].max()), float(hc_comp_vals.max()), 1.0) * 1.22
+
         fig_hc_home.add_trace(go.Bar(
-            x=df_hc['estacion'], 
+            x=hc_x_short, 
             y=df_hc['active_personas_requeridas'], 
+            customdata=df_hc['estacion'],
             name=f"ACTIVE SELECTION: {active_baseline_label}", 
             marker_color="#D9534F" if "Measured" in eficiencia_sel else "#5CB85C",
-            text=df_hc['active_personas_requeridas'],
-            textposition="outside"
+            text=[f"<b>{v:.1f}</b>" for v in df_hc['active_personas_requeridas']],
+            textposition="outside",
+            cliponaxis=False,
+            hovertemplate="%{customdata}<br>Active: %{y:.1f} Ops<extra></extra>"
         ))
         fig_hc_home.add_trace(go.Bar(
-            x=df_hc['estacion'], 
-            y=df_hc['paso5_personas_meta85'] if "Measured" in eficiencia_sel else df_hc['paso5_personas_real'], 
+            x=hc_x_short, 
+            y=hc_comp_vals, 
+            customdata=df_hc['estacion'],
             name="Comparison Baseline: " + ("85% Target" if "Measured" in eficiencia_sel else "38.5% Measured Reality"), 
             marker_color="#A9A9A9",
-            opacity=0.6
+            opacity=0.65,
+            text=[f"{v:.1f}" for v in hc_comp_vals],
+            textposition="outside",
+            cliponaxis=False,
+            hovertemplate="%{customdata}<br>Comparison: %{y:.1f} Ops<extra></extra>"
         ))
         fig_hc_home.update_layout(
             barmode="group",
+            bargap=0.24,
             title=f"Headcount Required per Work Station — Active Baseline: {active_baseline_label}",
             xaxis_title="Work Station / Pool",
             yaxis_title="Required Operators (Headcount)",
-            height=380,
-            legend=dict(orientation="h", y=1.15, x=0.05)
+            yaxis=dict(range=[0, hc_y_max]),
+            xaxis=dict(tickangle=-25),
+            height=410,
+            margin=dict(t=80, b=90, l=45, r=20),
+            legend=dict(orientation="h", y=1.18, x=0.0)
         )
         st.plotly_chart(fig_hc_home, use_container_width=True)
 
@@ -457,14 +559,58 @@ elif menu == "5. ⚡ Takt Time & Line Balancing":
                 '📌 <i>Total physical layout: 12 physical work stations providing 16 simultaneous parallel work posts.</i></div>', unsafe_allow_html=True)
     st.caption("📐 **Calculation & Formula**: Takt Time (Min/Unit) = Available Pool Net Minutes/Month ÷ Monthly Sales Units. Gap = Station P50 Cycle Time − Takt Time. Time Horizon: **Unit Cycle Level (Minutes/Unit)**.")
 
-    st.markdown("### 📊 Real Cycle Time vs Pool Takt Time")
-    fig_takt = px.bar(
-        df_takt, x="nombre_estacion", y="ciclo_mins_p50", color="is_gargalo_temporal",
+    st.markdown("### 📊 Real Cycle Time vs Pool Takt Time (Split Scale)")
+    is_cf_tk = df_takt['nombre_estacion'].str.contains("Control Frame", case=False, na=False)
+    df_tk_cf = df_takt[is_cf_tk]
+    df_tk_other = df_takt[~is_cf_tk]
+
+    def _add_takt_bars(fig, df_sub, row=None, col=None, show_legend=True):
+        kw = {"row": row, "col": col} if row is not None else {}
+        for flag, lbl, clr in [(True, "Exceeds Pool Takt (Bottleneck)", "#D9534F"), (False, "Within Takt", "#002B49")]:
+            sub = df_sub[df_sub['is_gargalo_temporal'] == flag]
+            if not sub.empty:
+                fig.add_trace(
+                    go.Bar(
+                        x=[_short_station_label(n) for n in sub['nombre_estacion']],
+                        y=sub['ciclo_mins_p50'],
+                        customdata=sub['nombre_estacion'],
+                        name=lbl,
+                        legendgroup=lbl,
+                        showlegend=show_legend,
+                        marker_color=clr,
+                        text=[f"<b>{v:.1f}m</b>" for v in sub['ciclo_mins_p50']],
+                        textposition="outside",
+                        cliponaxis=False,
+                        hovertemplate="%{customdata}<br>P50 Cycle: %{y:.1f} min/unit<extra></extra>",
+                    ),
+                    **kw,
+                )
+
+    if not df_tk_cf.empty and not df_tk_other.empty:
+        fig_takt = make_subplots(
+            rows=1, cols=2,
+            column_widths=[0.28, 0.72],
+            horizontal_spacing=0.08,
+            subplot_titles=("Control Frame Pools (Min/Unit)", "Enablement, Sub-Assembly & Test (Min/Unit)")
+        )
+        _add_takt_bars(fig_takt, df_tk_cf, row=1, col=1, show_legend=True)
+        _add_takt_bars(fig_takt, df_tk_other, row=1, col=2, show_legend=False)
+        fig_takt.update_yaxes(title_text="Cycle Time (Min / Unit)", range=[0, float(df_tk_cf['ciclo_mins_p50'].max()) * 1.2], row=1, col=1)
+        fig_takt.update_yaxes(title_text="Cycle Time (Min / Unit)", range=[0, float(df_tk_other['ciclo_mins_p50'].max()) * 1.2], row=1, col=2)
+        fig_takt.update_xaxes(tickangle=-18, categoryorder="array", categoryarray=[_short_station_label(n) for n in df_tk_cf['nombre_estacion']], row=1, col=1)
+        fig_takt.update_xaxes(tickangle=-18, categoryorder="array", categoryarray=[_short_station_label(n) for n in df_tk_other['nombre_estacion']], row=1, col=2)
+    else:
+        fig_takt = go.Figure()
+        _add_takt_bars(fig_takt, df_takt, show_legend=True)
+        fig_takt.update_yaxes(title_text="Cycle Time (Min / Unit)", range=[0, float(df_takt['ciclo_mins_p50'].max()) * 1.2])
+        fig_takt.update_xaxes(tickangle=-20, categoryorder="array", categoryarray=[_short_station_label(n) for n in df_takt['nombre_estacion']])
+
+    fig_takt.update_layout(
         title=f"Station P50 Cycle Time vs Pool Takt Time ({mercado_sel} - {ano_sel})",
-        labels={"ciclo_mins_p50": "P50 Cycle Time (Minutes / Unit)", "is_gargalo_temporal": "Exceeds Pool Takt?", "nombre_estacion": "Work Station / Pool"},
-        color_discrete_map={True: "#D9534F", False: "#002B49"}, text_auto=True
+        height=440,
+        margin=dict(t=85, b=80, l=55, r=25),
+        legend=dict(orientation="h", y=1.14, x=0.0)
     )
-    fig_takt.update_layout(xaxis_title="Work Station / Pool", yaxis_title="Cycle Time (Minutes / Unit)")
     st.plotly_chart(fig_takt, use_container_width=True)
 
     st.markdown("### 🚨 Parallel Work Posts Required to Meet Takt")
