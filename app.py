@@ -164,9 +164,9 @@ def _add_yamazumi_panel_traces(fig, df_sub, use_hours, unit_suffix, yam_componen
     loc_kw = {"row": row, "col": col} if row is not None and col is not None else {}
 
     traces = [
-        ("Value-Added (VA)", "va", "1. Value-Added (VA - 38.5%)", "#5CB85C", va_vals),
-        ("Necessary Non-Value-Added (NNVA)", "nnva", "2. Necessary Non-Value-Added (NNVA - 10.3%)", "#F0AD4E", nnva_vals),
-        ("NVA Waste", "nva", "3. Waste / Non-Value-Added (NVA - 51.2%)", "#D9534F", nva_vals),
+        ("Value-Added (VA)", "va", "VA (38.5%)", "#5CB85C", va_vals),
+        ("Necessary Non-Value-Added (NNVA)", "nnva", "NNVA (10.3%)", "#F0AD4E", nnva_vals),
+        ("NVA Waste", "nva", "NVA Waste (51.2%)", "#D9534F", nva_vals),
     ]
     for comp_key, lgroup, trace_name, color, vals in traces:
         if comp_key in yam_components:
@@ -302,13 +302,13 @@ if menu == "1. 🏠 Executive Dashboard":
         fig_yam = make_subplots(
             rows=1, cols=2,
             column_widths=[0.28, 0.72],
-            horizontal_spacing=0.08,
-            subplot_titles=("Control Frame Pools (High Work Content)", "Enablement, Sub-Assembly & Test (Zoomed Scale)")
+            horizontal_spacing=0.11,
+            subplot_titles=("Control Frame Pools", "Enablement, Sub-Assembly & Test")
         )
         y1_max = _add_yamazumi_panel_traces(fig_yam, df_yam_cf, use_hours, unit_suffix, yam_components, takt_line_val, row=1, col=1, show_legend=True, show_takt_label=False)
         y2_max = _add_yamazumi_panel_traces(fig_yam, df_yam_other, use_hours, unit_suffix, yam_components, takt_line_val, row=1, col=2, show_legend=False, show_takt_label=True)
         fig_yam.update_yaxes(title_text=f"Cycle Time ({unit_label})", range=[0, y1_max], row=1, col=1)
-        fig_yam.update_yaxes(title_text=f"Cycle Time ({unit_label})", range=[0, y2_max], row=1, col=2)
+        fig_yam.update_yaxes(range=[0, y2_max], row=1, col=2)
         fig_yam.update_xaxes(tickangle=-18, row=1, col=1)
         fig_yam.update_xaxes(tickangle=-18, row=1, col=2)
     else:
@@ -319,10 +319,10 @@ if menu == "1. 🏠 Executive Dashboard":
 
     fig_yam.update_layout(
         barmode="stack",
-        title=f"Yamazumi Workstation Cycle Breakdown (VA vs NNVA vs NVA) vs Line Takt ({unit_label}) — Takt: {takt_line_val:.1f} {unit_suffix}",
-        height=500,
-        margin=dict(t=95, b=85, l=55, r=30),
-        legend=dict(orientation="h", y=1.14, x=0.0)
+        title=dict(text=f"Yamazumi Workstation Cycle Breakdown ({unit_label}) — Takt: {takt_line_val:.1f} {unit_suffix}", x=0.0, y=0.96),
+        height=520,
+        margin=dict(t=85, b=115, l=55, r=25),
+        legend=dict(orientation="h", y=-0.24, yanchor="top", x=0.5, xanchor="center")
     )
     st.plotly_chart(fig_yam, use_container_width=True)
 
@@ -346,7 +346,7 @@ if menu == "1. 🏠 Executive Dashboard":
             x=hc_x_short, 
             y=df_hc['active_personas_requeridas'], 
             customdata=df_hc['estacion'],
-            name=f"ACTIVE SELECTION: {active_baseline_label}", 
+            name=f"Active: {'38.5% VA' if 'Measured' in eficiencia_sel else '85% Target'}", 
             marker_color="#D9534F" if "Measured" in eficiencia_sel else "#5CB85C",
             text=[f"<b>{v:.1f}</b>" for v in df_hc['active_personas_requeridas']],
             textposition="outside",
@@ -357,7 +357,7 @@ if menu == "1. 🏠 Executive Dashboard":
             x=hc_x_short, 
             y=hc_comp_vals, 
             customdata=df_hc['estacion'],
-            name="Comparison Baseline: " + ("85% Target" if "Measured" in eficiencia_sel else "38.5% Measured Reality"), 
+            name="Compare: " + ("85% Target" if "Measured" in eficiencia_sel else "38.5% Reality"), 
             marker_color="#A9A9A9",
             opacity=0.65,
             text=[f"{v:.1f}" for v in hc_comp_vals],
@@ -368,14 +368,14 @@ if menu == "1. 🏠 Executive Dashboard":
         fig_hc_home.update_layout(
             barmode="group",
             bargap=0.24,
-            title=f"Headcount Required per Work Station — Active Baseline: {active_baseline_label}",
+            title=dict(text=f"Headcount Required — {active_baseline_label}", x=0.0),
             xaxis_title="Work Station / Pool",
             yaxis_title="Required Operators (Headcount)",
             yaxis=dict(range=[0, hc_y_max]),
             xaxis=dict(tickangle=-25),
-            height=410,
-            margin=dict(t=80, b=90, l=45, r=20),
-            legend=dict(orientation="h", y=1.18, x=0.0)
+            height=430,
+            margin=dict(t=55, b=115, l=45, r=20),
+            legend=dict(orientation="h", y=-0.30, yanchor="top", x=0.5, xanchor="center")
         )
         st.plotly_chart(fig_hc_home, use_container_width=True)
 
@@ -590,13 +590,13 @@ elif menu == "5. ⚡ Takt Time & Line Balancing":
         fig_takt = make_subplots(
             rows=1, cols=2,
             column_widths=[0.28, 0.72],
-            horizontal_spacing=0.08,
-            subplot_titles=("Control Frame Pools (Min/Unit)", "Enablement, Sub-Assembly & Test (Min/Unit)")
+            horizontal_spacing=0.11,
+            subplot_titles=("Control Frame Pools", "Enablement, Sub-Assembly & Test")
         )
         _add_takt_bars(fig_takt, df_tk_cf, row=1, col=1, show_legend=True)
         _add_takt_bars(fig_takt, df_tk_other, row=1, col=2, show_legend=False)
         fig_takt.update_yaxes(title_text="Cycle Time (Min / Unit)", range=[0, float(df_tk_cf['ciclo_mins_p50'].max()) * 1.2], row=1, col=1)
-        fig_takt.update_yaxes(title_text="Cycle Time (Min / Unit)", range=[0, float(df_tk_other['ciclo_mins_p50'].max()) * 1.2], row=1, col=2)
+        fig_takt.update_yaxes(range=[0, float(df_tk_other['ciclo_mins_p50'].max()) * 1.2], row=1, col=2)
         fig_takt.update_xaxes(tickangle=-18, categoryorder="array", categoryarray=[_short_station_label(n) for n in df_tk_cf['nombre_estacion']], row=1, col=1)
         fig_takt.update_xaxes(tickangle=-18, categoryorder="array", categoryarray=[_short_station_label(n) for n in df_tk_other['nombre_estacion']], row=1, col=2)
     else:
@@ -606,10 +606,10 @@ elif menu == "5. ⚡ Takt Time & Line Balancing":
         fig_takt.update_xaxes(tickangle=-20, categoryorder="array", categoryarray=[_short_station_label(n) for n in df_takt['nombre_estacion']])
 
     fig_takt.update_layout(
-        title=f"Station P50 Cycle Time vs Pool Takt Time ({mercado_sel} - {ano_sel})",
-        height=440,
-        margin=dict(t=85, b=80, l=55, r=25),
-        legend=dict(orientation="h", y=1.14, x=0.0)
+        title=dict(text=f"Station P50 Cycle Time vs Pool Takt Time ({mercado_sel} - {ano_sel})", x=0.0, y=0.96),
+        height=460,
+        margin=dict(t=80, b=110, l=55, r=25),
+        legend=dict(orientation="h", y=-0.24, yanchor="top", x=0.5, xanchor="center")
     )
     st.plotly_chart(fig_takt, use_container_width=True)
 
