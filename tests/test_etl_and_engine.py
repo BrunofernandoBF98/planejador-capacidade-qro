@@ -77,7 +77,8 @@ def test_model_complexity_matrix_export_mapped_to_cfe():
     cfe_row = df_mat[df_mat['modelo'] == "3AP1-FG"].iloc[0]
     export_row = df_mat[df_mat['modelo'] == "Export Models (3AP1/3AP2)"].iloc[0]
     
-    assert cfe_row['hh_total_unid'] == export_row['hh_total_unid'] == 43.80
+    assert cfe_row['hh_total_unid'] == export_row['hh_total_unid'] == 44.27
+    assert cfe_row['sub_ensambles_h'] == export_row['sub_ensambles_h'] == 0.47
     assert cfe_row['control_frame_h'] == export_row['control_frame_h'] == 21.43
 
 def test_total_monthly_workload_capacity_summary():
@@ -101,8 +102,38 @@ def test_sap_vs_va_comparison_matrix_filtering():
 def test_unmeasured_operations_scope_honesty():
     df_unmeas = get_unmeasured_operations_scope()
     assert not df_unmeas.empty
-    assert len(df_unmeas) == 4
-    assert df_unmeas['headcount_conhecido'].sum() == 19
+    assert len(df_unmeas) == 3
+    assert df_unmeas['headcount_conhecido'].sum() == 14
+
+def test_subassembly_and_dt245_integration():
+    from src.engine.capacity_engine import get_headcount_requirements, get_takt_time_analysis, get_pareto_nva_corrected
+
+    df_st = run_query("SELECT DISTINCT nombre_estacion FROM fato_medicion")
+    assert len(df_st) == 7
+    assert "Sub-Assembly Station" in df_st['nombre_estacion'].tolist()
+
+    df_m = run_query("SELECT DISTINCT modelo_disyuntor FROM fato_medicion")
+    assert "DT-245" in df_m['modelo_disyuntor'].tolist()
+
+    df_hc, _, _, _, _ = get_headcount_requirements()
+    est_names = df_hc['estacion'].tolist()
+    assert "Sub-Assembly Station" in est_names
+    assert "Wire Cutting Station" in est_names
+    assert "Continuity Test Station" in est_names
+
+    df_takt, _, _, _, _ = get_takt_time_analysis()
+    takt_names = df_takt['nombre_estacion'].tolist()
+    assert "Sub-Assembly Station" in takt_names
+    assert "Wire Cutting Station" in takt_names
+    assert "Continuity Test Station" in takt_names
+
+    df_par_sub, tot_sub_nva = get_pareto_nva_corrected(estacion="Sub-Assembly Station", modo_demanda=False)
+    assert tot_sub_nva > 0
+    assert not df_par_sub.empty
+
+    from src.cpm.cpm_engine import build_process_dag
+    G = build_process_dag()
+    assert "Sub-Assembly Station" in G.nodes
 
 def test_sanity_check_suite_v10_all_passed():
     df_sanity = run_sanity_check_suite()
@@ -165,4 +196,3 @@ def test_pareto_station_filtering_consistency():
     df_empty, tot_empty = get_pareto_nva_corrected(estacion="Unmeasured Nonexistent Station", modo_demanda=False)
     assert tot_empty == 0.0
     assert df_empty.empty
-
