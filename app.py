@@ -146,7 +146,7 @@ if menu == "1. 🏠 Executive Dashboard":
     st.markdown('<div class="main-title">EXECUTIVE CAPACITY DASHBOARD — SIEMENS ENERGY QRO</div>', unsafe_allow_html=True)
     
     active_hc_req = pess_real if "Measured" in eficiencia_sel else pess_85
-    headline_text = f"Sales demand + real measured times → <b>REQUIRED WORKFORCE: {active_hc_req:.1f} Operators ({'38.5% VA Measured Reality' if 'Measured' in eficiencia_sel else '85% Siemens Corporate Target'})</b>. Compared to our fixed electrical workforce pool of <b>46 Current Electrical HC</b>, man-hour capacity has a <b>4–8× surplus</b>. The delivery bottleneck is not headcount, but the <b>53% NVA waste & 12.5% NNVA process time</b>."
+    headline_text = f"Sales demand + real measured times → <b>REQUIRED WORKFORCE: {active_hc_req:.1f} Operators ({'38.5% VA Measured Reality' if 'Measured' in eficiencia_sel else '85% Siemens Corporate Target'})</b>. Compared to our fixed electrical workforce pool of <b>46 Current Electrical HC</b>, man-hour capacity has a <b>4–8× surplus</b>. The delivery bottleneck is not headcount, but the <b>51.2% NVA waste & 10.3% NNVA process time</b>."
     st.markdown(f'<div class="concept-box">💡 <b>Executive Decision Assessment</b>: {headline_text}</div>', unsafe_allow_html=True)
 
     # Top Strip — 4 CEO KPI Cards
@@ -176,7 +176,7 @@ if menu == "1. 🏠 Executive Dashboard":
 
     st.markdown("---")
     st.subheader("📊 1. Flagship Yamazumi: Station Cycle Time (VA / NNVA / NVA) vs Line Takt")
-    st.caption("📐 **Calculation & Formula**: Stacked Stopwatch P50 Cycle Time = Value-Added (38.5%) + Necessary Non-Value-Added (12.5%) + NVA Waste (49.0%). Dashed line represents Required Line Takt Time (= Net Available Working Time/Month ÷ Monthly Sales Units). Time Horizon: **Unit Level**.")
+    st.caption("📐 **Calculation & Formula**: Stacked Stopwatch P50 Cycle Time = Value-Added (38.5%) + Necessary Non-Value-Added (10.3%) + NVA Waste (51.2%). Dashed line represents Required Line Takt Time (= Net Available Working Time/Month ÷ Monthly Sales Units). Time Horizon: **Unit Level**.")
     
     col_yam1, col_yam2 = st.columns([3, 1])
     with col_yam1:
@@ -196,8 +196,8 @@ if menu == "1. 🏠 Executive Dashboard":
 
     df_yam = df_takt.copy()
     df_yam['va_val'] = round((df_yam['ciclo_mins_p50'] * 0.385) / div_factor, 2 if use_hours else 1)
-    df_yam['nnva_val'] = round((df_yam['ciclo_mins_p50'] * 0.125) / div_factor, 2 if use_hours else 1)
-    df_yam['nva_val'] = round((df_yam['ciclo_mins_p50'] * 0.490) / div_factor, 2 if use_hours else 1)
+    df_yam['nnva_val'] = round((df_yam['ciclo_mins_p50'] * 0.103) / div_factor, 2 if use_hours else 1)
+    df_yam['nva_val'] = round((df_yam['ciclo_mins_p50'] * 0.512) / div_factor, 2 if use_hours else 1)
 
     fig_yam = go.Figure()
     if "Value-Added (VA)" in yam_components:
@@ -213,7 +213,7 @@ if menu == "1. 🏠 Executive Dashboard":
         fig_yam.add_trace(go.Bar(
             x=df_yam['nombre_estacion'], 
             y=df_yam['nnva_val'], 
-            name="2. Necessary Non-Value-Added (NNVA - 12.5%)", 
+            name="2. Necessary Non-Value-Added (NNVA - 10.3%)", 
             marker_color="#F0AD4E", 
             text=[f"{v:.1f}{unit_suffix}" if use_hours else f"{v:.0f}" for v in df_yam['nnva_val']], 
             textposition="inside"
@@ -222,7 +222,7 @@ if menu == "1. 🏠 Executive Dashboard":
         fig_yam.add_trace(go.Bar(
             x=df_yam['nombre_estacion'], 
             y=df_yam['nva_val'], 
-            name="3. Waste / Non-Value-Added (NVA - 49.0%)", 
+            name="3. Waste / Non-Value-Added (NVA - 51.2%)", 
             marker_color="#D9534F", 
             text=[f"{v:.1f}{unit_suffix}" if use_hours else f"{v:.0f}" for v in df_yam['nva_val']], 
             textposition="inside"
@@ -297,14 +297,14 @@ if menu == "1. 🏠 Executive Dashboard":
 
     st.markdown("---")
     st.subheader("👥 Total Factory Workforce Requirement (Sum of Measured Stations) vs 46 HC Contracted Pool")
-    st.caption("📐 **Total Factory Headcount Sum**: Sum of required operators across the 6 measured electrical workstations compared against the 46 fixed contracted operators pool (which includes 19 HC in unmeasured stations).")
+    st.caption("📐 **Total Factory Headcount Sum**: Sum of required operators across the 7 measured electrical workstations compared against the 46 fixed contracted operators pool (which includes 14 HC in unmeasured stations).")
 
     st.markdown("""
         <div style="background-color: #FFF8E1; border-left: 4px solid #FFA000; padding: 12px; border-radius: 4px; color: #5D4037; margin-bottom: 15px; font-size: 13px;">
             <b>⚠️ Data Scope & Coverage Honesty Note (Unmeasured Electrical Stations)</b>:<br/>
-            • The calculated total headcount above covers the <b>6 measured electrical stations</b> (Control Frame, Wire Cutting, Harness Enablement, Cabinet Enablement, Door Enablement, Continuity Test).<br/>
-            • <b>19 operators (41% of the 46 HC pool)</b> belong to electrical stations that have <b>NOT YET BEEN MEASURED</b> with video chronoanalysis: <code>Placas de TC's</code> (~2 HC), <code>Sub-ensambles</code> (~2 HC) and <code>Final Assembly (Ensamble Final)</code> (19 HC pool priority).<br/>
-            📌 <i>As chronoanalysis video measurements are conducted for Ensamble Final and remaining sub-assemblies, their required headcount will be incorporated into this calculation.</i>
+            • The calculated total headcount above covers the <b>7 measured electrical stations</b> (Control Frame, Wire Cutting, Harness Enablement, Cabinet Enablement, Door Enablement, Sub-Assembly, Continuity Test).<br/>
+            • <b>14 operators (30.4% of the 46 HC pool)</b> belong to electrical stations that have <b>NOT YET BEEN MEASURED</b> with video chronoanalysis: <code>CT Wiring</code> (4 HC), <code>Placas de TC's</code> (3 HC) and <code>Final Assembly (Ensamble Final)</code> (7 HC priority).<br/>
+            📌 <i>As chronoanalysis video measurements are incorporated for Ensamble Final, CT Wiring and Placas de TC's, their required headcount will be integrated into this calculation.</i>
         </div>
     """, unsafe_allow_html=True)
 
@@ -476,14 +476,14 @@ elif menu == "5. ⚡ Takt Time & Line Balancing":
 
     st.markdown("---")
     st.markdown("### 🏷️ Circuit Breaker Work Content & Complexity Breakdown (Hours / Unit)")
-    st.info("📌 **Export Model Assumption**: As requested, Export models are calculated using the exact same complexity baseline as CFE domestic models (43.8 Man-Hours/Unit Total), since chronoanalysis studies for Export are pending.")
+    st.info("📌 **Export Model Assumption**: As requested, Export models are calculated using the exact same complexity baseline as CFE domestic models (44.3 Man-Hours/Unit Total, including Sub-Assembly), since chronoanalysis studies for Export are pending.")
     
     df_matrix = get_model_workload_hours_matrix()
     st.dataframe(df_matrix, use_container_width=True)
 
     fig_matrix = px.bar(
         df_matrix, x="modelo", 
-        y=["control_frame_h", "corte_crimpado_h", "arnes_accionamiento_h", "habilitado_chasis_h", "habilitado_puertas_h", "prueba_continuidad_h"],
+        y=["control_frame_h", "corte_crimpado_h", "arnes_accionamiento_h", "habilitado_chasis_h", "habilitado_puertas_h", "sub_ensambles_h", "prueba_continuidad_h"],
         title="Unit Work Content (Man-Hours / Unit) per Workstation by Model & Complexity",
         labels={"value": "Work Content (Hours / Unit)", "variable": "Workstation / Process", "modelo": "Circuit Breaker Model"},
         barmode="stack"
@@ -602,7 +602,7 @@ elif menu == "7. 🛑 Waste & NVA Pareto Analysis":
 
     col_p1, col_p2 = st.columns(2)
     with col_p1:
-        estacion_pareto = st.selectbox("Filter by Station / Pool:", ["Todas", "Control Frame Station", "Wire Cutting Station", "Harness Enablement Station", "Cabinet Enablement Station", "Door Enablement Station", "Continuity Test Station"])
+        estacion_pareto = st.selectbox("Filter by Station / Pool:", ["Todas", "Control Frame Station", "Wire Cutting Station", "Harness Enablement Station", "Cabinet Enablement Station", "Door Enablement Station", "Sub-Assembly Station", "Continuity Test Station"])
     with col_p2:
         modo_pareto = st.radio("NVA Calculation Basis:", ["Demand-Driven Forecast (Monthly Units × Model NVA/Unit)", "Static Stopwatch Video Sample Baseline (Raw Sample)"], index=0)
 
@@ -670,7 +670,7 @@ elif menu == "8. 🛠️ Necessary Non-Value-Added (NNVA) Process Analysis":
 
     col_nn1, col_nn2 = st.columns(2)
     with col_nn1:
-        estacion_nnva = st.selectbox("Filter by Station / Pool (NNVA):", ["Todas", "Control Frame Station", "Wire Cutting Station", "Harness Enablement Station", "Cabinet Enablement Station", "Door Enablement Station", "Continuity Test Station"])
+        estacion_nnva = st.selectbox("Filter by Station / Pool (NNVA):", ["Todas", "Control Frame Station", "Wire Cutting Station", "Harness Enablement Station", "Cabinet Enablement Station", "Door Enablement Station", "Sub-Assembly Station", "Continuity Test Station"])
     with col_nn2:
         modo_nnva = st.radio("NNVA Calculation Basis:", ["Demand-Driven Forecast (Monthly Units × Model NNVA/Unit)", "Static Stopwatch Video Sample Baseline (Raw Sample)"], index=0)
 
@@ -756,10 +756,10 @@ elif menu.startswith("9. 📊 Shift & Productivity Analysis"):
     # Filters
     col_f1, col_f2 = st.columns(2)
     with col_f1:
-        stations_list = ["All", "Control Frame Station", "Wire Cutting Station", "Harness Enablement Station", "Cabinet Enablement Station", "Door Enablement Station", "Continuity Test Station"]
+        stations_list = ["All", "Control Frame Station", "Wire Cutting Station", "Harness Enablement Station", "Cabinet Enablement Station", "Door Enablement Station", "Sub-Assembly Station", "Continuity Test Station"]
         sel_station = st.selectbox("Filter by Workstation:", stations_list, key="shift_station_filter")
     with col_f2:
-        models_list = ["All", "FG-145", "DT-362", "DT-145", "FI-420", "FI-245", "FI-145", "FG-150"]
+        models_list = ["All", "FG-145", "DT-362", "DT-145", "DT-245", "FI-420", "FI-245", "FI-145", "FG-150", "FG-170", "FS-170"]
         sel_model = st.selectbox("Filter by Breaker Model:", models_list, key="shift_model_filter")
 
     df_shift = get_shift_performance_summary(estacion=sel_station, modelo=sel_model)
@@ -850,7 +850,7 @@ elif menu.startswith("9. 📊 Shift & Productivity Analysis"):
 elif menu.startswith("10. 📊 Data Coverage"):
     st.markdown('<div class="main-title">10. DATA COVERAGE & ELECTRICAL WORKFORCE OVERVIEW (46 HC POOL)</div>', unsafe_allow_html=True)
     st.markdown('<div class="concept-box">💡 <b>Confirmed Workforce Structure (46 HC Total Electrical Pool)</b>:<br/>'
-                'The electrical area has a total fixed workforce of <b>46 operators</b> across 23 physical stations. 19 HC (41%) belong to Final Assembly and sub-assemblies which are not yet measured with stopwatch chronoanalysis.</div>', unsafe_allow_html=True)
+                'The electrical area has a total fixed workforce of <b>46 operators</b> across physical stations. With <b>Sub-Assembly Station</b> now included (7 measured stations, 32 HC), only <b>14 HC (30.4%)</b> remain unmeasured (CT Wiring, Placas de TC\'s, and Final Assembly).</div>', unsafe_allow_html=True)
 
     overview_data = [
         {"Station": "Wire Cutting", "Type": "Single", "Physical Stations": 1, "Work Posts": 1, "HC from 46 Pool": "~2", "Chrono Measured": "✅ Yes", "Delivery Calc": "Included"},
@@ -859,10 +859,11 @@ elif menu.startswith("10. 📊 Data Coverage"):
         {"Station": "Harness Enablement", "Type": "Single", "Physical Stations": 1, "Work Posts": 1, "HC from 46 Pool": "~2", "Chrono Measured": "✅ Yes", "Delivery Calc": "Included"},
         {"Station": "Cabinet Enablement", "Type": "Single", "Physical Stations": 1, "Work Posts": 1, "HC from 46 Pool": "~2", "Chrono Measured": "✅ Yes", "Delivery Calc": "Included"},
         {"Station": "Door Enablement", "Type": "Single", "Physical Stations": 1, "Work Posts": 1, "HC from 46 Pool": "~2", "Chrono Measured": "✅ Yes", "Delivery Calc": "Included"},
+        {"Station": "Sub ensambles (Sub-Assembly)", "Type": "Single", "Physical Stations": 1, "Work Posts": 1, "HC from 46 Pool": "5", "Chrono Measured": "✅ Yes", "Delivery Calc": "Included (Op 0030)"},
         {"Station": "Continuity Test", "Type": "Single", "Physical Stations": 1, "Work Posts": 1, "HC from 46 Pool": "~2", "Chrono Measured": "✅ Yes", "Delivery Calc": "Included"},
-        {"Station": "Placas de TC's", "Type": "Single", "Physical Stations": 1, "Work Posts": 1, "HC from 46 Pool": "~2", "Chrono Measured": "❌ No Time", "Delivery Calc": "Excluded (No Time)"},
-        {"Station": "Sub ensambles", "Type": "Single", "Physical Stations": 1, "Work Posts": 1, "HC from 46 Pool": "~2", "Chrono Measured": "❌ No Time", "Delivery Calc": "Excluded (No Time)"},
-        {"Station": "Final Assembly (Ensamble Final) ⚠ PRIORITY", "Type": "Multi", "Physical Stations": 8, "Work Posts": 8, "HC from 46 Pool": "19", "Chrono Measured": "❌ No Time", "Delivery Calc": "Excluded (Priority for Next Measurement)"}
+        {"Station": "CT Wiring (Cableado de TC's)", "Type": "Single", "Physical Stations": 1, "Work Posts": 1, "HC from 46 Pool": "4", "Chrono Measured": "❌ No Time", "Delivery Calc": "Excluded (No Time)"},
+        {"Station": "Placas de TC's", "Type": "Single", "Physical Stations": 1, "Work Posts": 1, "HC from 46 Pool": "3", "Chrono Measured": "❌ No Time", "Delivery Calc": "Excluded (No Time)"},
+        {"Station": "Final Assembly (Ensamble Final) ⚠ PRIORITY", "Type": "Multi", "Physical Stations": 8, "Work Posts": 8, "HC from 46 Pool": "7", "Chrono Measured": "❌ No Time", "Delivery Calc": "Excluded (Priority for Next Measurement)"}
     ]
     st.table(pd.DataFrame(overview_data))
 
