@@ -13,12 +13,14 @@ DEFAULT_DAG_EDGES = [
     ("KITTING", "Wire Cutting Station", "Série"),
     ("KITTING", "Door Enablement Station", "Série"),
     ("KITTING", "Cabinet Enablement Station", "Série"),
+    ("KITTING", "Sub-Assembly Station", "Série"),
     ("Control Frame Station", "Continuity Test Station", "Série"),
     ("Wire Cutting Station", "Harness Enablement Station", "Série"),
     ("Harness Enablement Station", "Continuity Test Station", "Série"),
     ("Continuity Test Station", "Ensamble Final", "Série"),
     ("Door Enablement Station", "Ensamble Final", "Série"),
     ("Cabinet Enablement Station", "Ensamble Final", "Série"),
+    ("Sub-Assembly Station", "Ensamble Final", "Série"),
     ("Ensamble Final", "Inspeção Final (WIP)", "Série")
 ]
 
@@ -34,6 +36,7 @@ def build_process_dag(modelo_code="FG-145", custom_times=None, rework_loop_pct=0
         "Harness Enablement Station": 3.61,
         "Cabinet Enablement Station": 4.10,
         "Door Enablement Station": 2.80,
+        "Sub-Assembly Station": 0.47,
         "Continuity Test Station": 9.36 * (1.0 + rework_loop_pct), # Rework loop inflates Continuity Test
         "Ensamble Final": 4.0,
         "Inspeção Final (WIP)": 1.5
